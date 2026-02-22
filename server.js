@@ -1,33 +1,39 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Initialize Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory databases
-const users = {}; // username -> { password, lp, rank }
-const rooms = {}; // roomId -> { players: [], board: "", time: 120, interval: null, scores: {}, words: {} }
+// In-memory active game data (Rooms and Matchmaking don't go in the database)
+const rooms = {}; 
 let matchmakingQueue = [];
 
-// Ranking Logic
+// Updated Ranking Logic (Linguist Theme)
 function getRank(lp) {
-    if (lp <= 50) return "Lower E-Rank";
-    if (lp <= 100) return "Higher E Rank";
-    if (lp <= 200) return "Lower D Rank";
-    if (lp <= 300) return "Higher D Rank";
-    if (lp <= 400) return "Lower C Rank";
-    if (lp <= 500) return "Higher C Rank";
-    if (lp <= 600) return "Lower B Rank";
-    if (lp <= 700) return "Higher B Rank";
-    if (lp <= 800) return "Lower A Rank";
-    if (lp <= 900) return "Higher A Rank";
-    if (lp <= 999) return "Lower S Rank";
-    return "Higher S Rank";
+    if (lp <= 50) return "Novice Scribe";
+    if (lp <= 100) return "Apprentice Lexis";
+    if (lp <= 200) return "Word-Seeker";
+    if (lp <= 300) return "Fluent Phrase-Maker";
+    if (lp <= 400) return "Skilled Etymologist";
+    if (lp <= 500) return "Master of Letters";
+    if (lp <= 600) return "Eloquent Scholar";
+    if (lp <= 700) return "Renowned Author";
+    if (lp <= 800) return "Grand Lexicographer";
+    if (lp <= 900) return "Sage of the Script";
+    if (lp <= 999) return "Mythic Orator";
+    return "Genesis Lexicon God";
 }
 
 // Word Factory Scoring
@@ -54,23 +60,51 @@ io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
     let currentUser = null;
 
-    // --- Authentication ---
-    socket.on('register', (data) => {
-        if (users[data.username]) {
+    // --- Authentication (Supabase Integration) ---
+    socket.on('register', async (data) => {
+        // Check if username exists
+        const { data: existingUser, error: searchError } = await supabase
+            .from('Wordiers')
+            .select('username')
+            .eq('username', data.username)
+            .single();
+
+        if (existingUser) {
             socket.emit('authError', 'Username already exists.');
+            return;
+        }
+
+        const initialRank = getRank(0);
+        
+        // Insert new user
+        const { error: insertError } = await supabase
+            .from('Wordiers')
+            .insert([{ username: data.username, password: data.password, lp: 0, rank: initialRank }]);
+
+        if (insertError) {
+            socket.emit('authError', 'Database error during registration.');
         } else {
-            users[data.username] = { password: data.password, lp: 0, rank: getRank(0) };
             currentUser = data.username;
-            socket.emit('authSuccess', { username: currentUser, lp: 0, rank: getRank(0) });
+            socket.emit('authSuccess', { username: currentUser, lp: 0, rank: initialRank });
         }
     });
 
-    socket.on('login', (data) => {
-        const user = users[data.username];
-        if (user && user.password === data.password) {
-            currentUser = data.username;
-            user.rank = getRank(user.lp);
-            socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: user.rank });
+    socket.on('login', async (data) => {
+        const { data: user, error } = await supabase
+            .from('Wordiers')
+            .select('*')
+            .eq('username', data.username)
+            .eq('password', data.password)
+            .single();
+
+        if (user) {
+            currentUser = user.username;
+            // Ensure rank is up to date based on LP on login
+            const currentRank = getRank(user.lp);
+            if (user.rank !== currentRank) {
+                await supabase.from('Wordiers').update({ rank: currentRank }).eq('username', user.username);
+            }
+            socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: currentRank });
         } else {
             socket.emit('authError', 'Invalid username or password.');
         }
@@ -81,10 +115,30 @@ io.on('connection', (socket) => {
     });
 
     // --- Lobby & Chat ---
-    socket.on('sendChat', (message) => {
+    socket.on('sendChat', async (message) => {
         if (!currentUser) return;
-        const user = users[currentUser];
-        io.emit('receiveChat', { username: currentUser, rank: user.rank, message });
+        
+        const { data: user } = await supabase
+            .from('Wordiers')
+            .select('rank')
+            .eq('username', currentUser)
+            .single();
+            
+        const rank = user ? user.rank : "Unknown";
+        io.emit('receiveChat', { username: currentUser, rank: rank, message });
+    });
+
+    // --- Leaderboard ---
+    socket.on('getLeaderboard', async () => {
+        const { data: topPlayers, error } = await supabase
+            .from('Wordiers')
+            .select('username, lp, rank')
+            .order('lp', { ascending: false })
+            .limit(10);
+            
+        if (!error && topPlayers) {
+            socket.emit('updateLeaderboard', topPlayers);
+        }
     });
 
     // --- Matchmaking & Rooms ---
@@ -95,7 +149,7 @@ io.on('connection', (socket) => {
             socket.username = currentUser;
         }
 
-        // Start game if 4 players are in queue (or less if testing - currently set to 2 for easier testing, change to 4 for production)
+        // Test mode: 2 players. Change to 4 for full production.
         if (matchmakingQueue.length >= 2) { 
             const roomPlayers = matchmakingQueue.splice(0, 4);
             const roomId = 'room_' + Date.now();
@@ -107,7 +161,7 @@ io.on('connection', (socket) => {
                 board: board,
                 time: 120, // 2 minutes
                 scores: {},
-                words: {} // Tracks found words per player
+                words: {} 
             };
 
             roomPlayers.forEach(p => {
@@ -180,14 +234,11 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (!room || !currentUser) return;
 
-        // Basic validation: Check if word was already found by this user
         if (room.words[currentUser].includes(word)) {
             socket.emit('wordResult', { success: false, message: 'Already found!' });
             return;
         }
 
-        // Add dictionary check here in the future
-        // For now, if it passes the client's adjacency grid check and length >= 3, we accept it
         if (word.length >= 3) {
             const points = getWordScore(word.length);
             room.scores[currentUser] += points;
@@ -215,7 +266,7 @@ io.on('connection', (socket) => {
         }, 1000);
     }
 
-    function handleGameOver(roomId) {
+    async function handleGameOver(roomId) {
         const room = rooms[roomId];
         if (!room) return;
 
@@ -231,17 +282,36 @@ io.on('connection', (socket) => {
             }
         }
 
-        // Assign LP
         const lpResults = {};
-        room.players.forEach(player => {
+
+        // Process each player and update Supabase
+        for (const player of room.players) {
+            // Fetch current LP
+            const { data: userData } = await supabase
+                .from('Wordiers')
+                .select('lp')
+                .eq('username', player)
+                .single();
+
+            let currentLp = userData ? userData.lp : 0;
+            let newLp = currentLp;
+
             if (winners.includes(player) && highestScore > 0) {
-                users[player].lp += 25; // Winner gets +25 LP
+                newLp += 25; 
             } else {
-                users[player].lp = Math.max(0, users[player].lp - 10); // Losers get -10 LP
+                newLp = Math.max(0, newLp - 10); 
             }
-            users[player].rank = getRank(users[player].lp);
-            lpResults[player] = { score: room.scores[player], newLp: users[player].lp, rank: users[player].rank };
-        });
+
+            const newRank = getRank(newLp);
+
+            // Save to database
+            await supabase
+                .from('Wordiers')
+                .update({ lp: newLp, rank: newRank })
+                .eq('username', player);
+
+            lpResults[player] = { score: room.scores[player], newLp: newLp, rank: newRank };
+        }
 
         io.to(roomId).emit('gameOver', { winners, results: lpResults });
         delete rooms[roomId];
