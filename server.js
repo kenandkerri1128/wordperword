@@ -100,6 +100,22 @@ function generateBoard() {
     return board.split('').sort(() => 0.5 - Math.random()).join('');
 }
 
+async function getPlayerWorldRank(username, lp) {
+    const { count, error } = await supabase
+        .from('Wordiers')
+        .select('*', { count: 'exact', head: true })
+        .gt('lp', lp);
+    if (error) return "?";
+    return count + 1; // Rank is the amount of people strictly greater than you + 1
+}
+
+function broadcastRoomList() {
+    const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 4).map(id => ({
+        id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
+    }));
+    io.emit('roomListUpdate', availableRooms);
+}
+
 io.on('connection', (socket) => {
     let currentUser = null;
 
@@ -155,18 +171,7 @@ io.on('connection', (socket) => {
                         socket.join(roomId);
                         break;
                     } else {
-                        // User refreshed while in a waiting room. Clean them up so they don't get stuck in a frozen state.
-                        socket.leave(roomId);
-                        rooms[roomId].players = rooms[roomId].players.filter(p => p !== currentUser);
-                        
-                        if (rooms[roomId].players.length === 0) {
-                            delete rooms[roomId];
-                        } else if (rooms[roomId].isRankedWaiting) {
-                            delete rooms[roomId].readyStates[currentUser];
-                            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: rooms[roomId].players, readyStates: rooms[roomId].readyStates });
-                        } else {
-                            io.to(roomId).emit('playerJoined', rooms[roomId].players);
-                        }
+                        handlePlayerLeave(socket, roomId);
                     }
                 }
             }
@@ -186,7 +191,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('logout', () => {
-        if (currentUser) delete onlineUsers[currentUser];
+        if (currentUser) {
+            for (const roomId in rooms) {
+                if (rooms[roomId].players.includes(currentUser) && rooms[roomId].status === 'waiting') {
+                    handlePlayerLeave(socket, roomId);
+                }
+            }
+            delete onlineUsers[currentUser];
+        }
         currentUser = null;
         sendAdminUpdate();
     });
@@ -209,7 +221,7 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (!room) return;
         room.isRankedWaiting = false; 
-        room.status = 'playing'; // Mark room as actively playing to prevent refresh bugs
+        room.status = 'playing'; 
         
         io.to(roomId).emit('gameLoading', { roomId: roomId, board: room.board, players: room.players });
         
@@ -227,6 +239,10 @@ io.on('connection', (socket) => {
         const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', currentUser).single();
         const playerLp = userData ? userData.lp : 0;
         socket.lp = playerLp; 
+        
+        const rankData = getRankData(playerLp);
+        const worldRank = await getPlayerWorldRank(currentUser, playerLp);
+        const pDetails = { lpRank: rankData.rank, worldRank: worldRank };
         
         let joinedRoomId = null;
         for (const roomId in rooms) {
@@ -246,7 +262,8 @@ io.on('connection', (socket) => {
             room.scores[currentUser] = 0;
             room.words[currentUser] = [];
             room.readyStates[currentUser] = false;
-            io.to(joinedRoomId).emit('rankedLobbyUpdate', { roomId: joinedRoomId, players: room.players, readyStates: room.readyStates });
+            room.playerDetails[currentUser] = pDetails;
+            io.to(joinedRoomId).emit('rankedLobbyUpdate', { roomId: joinedRoomId, players: room.players, readyStates: room.readyStates, playerDetails: room.playerDetails });
             return;
         }
 
@@ -272,6 +289,7 @@ io.on('connection', (socket) => {
                 id: roomId,
                 players: matchedGroup.map(s => s.username),
                 readyStates: {},
+                playerDetails: {},
                 board: generateBoard(),
                 time: 120,
                 scores: {},
@@ -283,14 +301,18 @@ io.on('connection', (socket) => {
                 baseLp: matchedGroup[0].lp 
             };
             
-            matchedGroup.forEach(s => {
+            for (let s of matchedGroup) {
                 s.join(roomId);
                 rooms[roomId].scores[s.username] = 0;
                 rooms[roomId].words[s.username] = [];
                 rooms[roomId].readyStates[s.username] = false;
-            });
+                
+                const sLp = s.lp; 
+                const sWr = await getPlayerWorldRank(s.username, sLp);
+                rooms[roomId].playerDetails[s.username] = { lpRank: getRankData(sLp).rank, worldRank: sWr };
+            }
             
-            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: rooms[roomId].players, readyStates: rooms[roomId].readyStates });
+            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: rooms[roomId].players, readyStates: rooms[roomId].readyStates, playerDetails: rooms[roomId].playerDetails });
         } else {
             socket.emit('searchingMatch'); 
         }
@@ -300,42 +322,65 @@ io.on('connection', (socket) => {
         matchmakingQueue = matchmakingQueue.filter(s => s.id !== socket.id);
     });
 
-    socket.on('leaveRankedLobby', (roomId) => {
-        if (rooms[roomId] && rooms[roomId].isRankedWaiting) {
-            socket.leave(roomId);
-            const room = rooms[roomId];
-            room.players = room.players.filter(p => p !== currentUser);
-            delete room.readyStates[currentUser];
-            delete room.scores[currentUser];
-            delete room.words[currentUser];
-            
-            if (room.players.length === 0) {
-                delete rooms[roomId]; 
-            } else if (room.players.length === 1) {
-                const lastUser = room.players[0];
-                const lastSocketId = onlineUsers[lastUser];
-                if (lastSocketId) {
-                    const lastSocket = io.sockets.sockets.get(lastSocketId);
-                    if (lastSocket) {
-                        lastSocket.leave(roomId);
-                        if (!matchmakingQueue.find(s => s.id === lastSocket.id)) {
-                            matchmakingQueue.push(lastSocket);
+    function handlePlayerLeave(sock, roomId) {
+        const room = rooms[roomId];
+        if (!room || room.status !== 'waiting') return;
+        
+        const userToLeave = sock.username;
+        sock.leave(roomId);
+        
+        room.players = room.players.filter(p => p !== userToLeave);
+        
+        if (room.isRankedWaiting) {
+            delete room.readyStates[userToLeave];
+            if (room.playerDetails) delete room.playerDetails[userToLeave];
+        }
+        if (room.scores) delete room.scores[userToLeave];
+        if (room.words) delete room.words[userToLeave];
+        
+        if (room.players.length === 0) {
+            delete rooms[roomId];
+        } else {
+            if (room.isRankedWaiting) {
+                if (room.players.length === 1) {
+                    const lastUser = room.players[0];
+                    const lastSocketId = onlineUsers[lastUser];
+                    if (lastSocketId) {
+                        const lastSocket = io.sockets.sockets.get(lastSocketId);
+                        if (lastSocket) {
+                            lastSocket.leave(roomId);
+                            if (!matchmakingQueue.find(s => s.id === lastSocket.id)) {
+                                matchmakingQueue.push(lastSocket);
+                            }
+                            lastSocket.emit('searchingMatch');
                         }
-                        lastSocket.emit('searchingMatch');
                     }
+                    delete rooms[roomId];
+                } else {
+                    io.to(roomId).emit('rankedLobbyUpdate', { 
+                        roomId, 
+                        players: room.players, 
+                        readyStates: room.readyStates,
+                        playerDetails: room.playerDetails 
+                    });
                 }
-                delete rooms[roomId];
             } else {
-                io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: room.players, readyStates: room.readyStates });
+                if (room.host === userToLeave) room.host = room.players[0];
+                io.to(roomId).emit('playerJoined', room.players);
             }
         }
+        broadcastRoomList();
+    }
+
+    socket.on('leaveWaitingRoom', (roomId) => {
+        handlePlayerLeave(socket, roomId);
     });
 
     socket.on('readyRanked', (roomId) => {
         const room = rooms[roomId];
         if (room && room.isRankedWaiting) {
             room.readyStates[currentUser] = true;
-            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: room.players, readyStates: room.readyStates });
+            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: room.players, readyStates: room.readyStates, playerDetails: room.playerDetails });
             
             const allReady = room.players.every(p => room.readyStates[p]);
             if (allReady && room.players.length >= 2) {
@@ -345,10 +390,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('getRoomList', () => {
-        const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 4).map(id => ({
-            id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
-        }));
-        socket.emit('roomListUpdate', availableRooms);
+        broadcastRoomList();
     });
 
     socket.on('createRoom', (password) => {
@@ -363,6 +405,8 @@ io.on('connection', (socket) => {
             password: password || null
         };
         socket.emit('roomCreated', roomId);
+        io.to(roomId).emit('playerJoined', rooms[roomId].players);
+        broadcastRoomList();
         sendAdminUpdate();
     });
 
@@ -380,6 +424,7 @@ io.on('connection', (socket) => {
         rooms[roomId].scores[currentUser] = 0;
         rooms[roomId].words[currentUser] = [];
         io.to(roomId).emit('playerJoined', rooms[roomId].players);
+        broadcastRoomList();
         sendAdminUpdate();
     });
 
@@ -454,7 +499,8 @@ io.on('connection', (socket) => {
         room.scores[currentUser] = -9999; 
         socket.leave(roomId);
         
-        const lpChange = room.isAI ? -5 : -20;
+        // Zero deduction for AI match quit, otherwise -20
+        const lpChange = room.isAI ? 0 : -20;
         const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', currentUser).single();
         let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
         const rankData = getRankData(newLp);
@@ -496,25 +542,31 @@ io.on('connection', (socket) => {
             const isConnected = !!onlineUsers[player];
             const hasForfeited = room.scores[player] === -9999;
 
-            if (!isConnected || hasForfeited) {
-                lpChange = room.isAI ? -5 : -20;
-            } else if (room.isAI) {
-                lpChange = (sortedPlayers.indexOf(player) === 0) ? 5 : -5;
+            if (room.isAI) {
+                if (!isConnected || hasForfeited) {
+                    lpChange = 0; // No deduction for loss/quit in AI
+                } else {
+                    lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
+                }
             } else {
-                const pCount = sortedPlayers.filter(p => !p.startsWith('AI_')).length;
-                const i = sortedPlayers.filter(p => !p.startsWith('AI_')).indexOf(player);
-                if (pCount === 4) {
-                    if (i === 0) lpChange = 20;
-                    else if (i === 1) lpChange = 5;
-                    else if (i === 2) lpChange = 0;
-                    else if (i === 3) lpChange = -5;
-                } else if (pCount === 3) {
-                    if (i === 0) lpChange = 20;
-                    else if (i === 1) lpChange = 0;
-                    else if (i === 2) lpChange = -5;
-                } else if (pCount === 2) {
-                    if (i === 0) lpChange = 20;
-                    else if (i === 1) lpChange = -5;
+                if (!isConnected || hasForfeited) {
+                    lpChange = -20;
+                } else {
+                    const pCount = sortedPlayers.filter(p => !p.startsWith('AI_')).length;
+                    const i = sortedPlayers.filter(p => !p.startsWith('AI_')).indexOf(player);
+                    if (pCount === 4) {
+                        if (i === 0) lpChange = 20;
+                        else if (i === 1) lpChange = 5;
+                        else if (i === 2) lpChange = 0;
+                        else if (i === 3) lpChange = -5;
+                    } else if (pCount === 3) {
+                        if (i === 0) lpChange = 20;
+                        else if (i === 1) lpChange = 0;
+                        else if (i === 2) lpChange = -5;
+                    } else if (pCount === 2) {
+                        if (i === 0) lpChange = 20;
+                        else if (i === 1) lpChange = -5;
+                    }
                 }
             }
 
@@ -538,6 +590,7 @@ io.on('connection', (socket) => {
 
         io.to(roomId).emit('gameOver', { results: lpResults, sortedPlayers: sortedPlayers });
         delete rooms[roomId];
+        broadcastRoomList();
         sendAdminUpdate();
     }
 
@@ -571,8 +624,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        if (currentUser) delete onlineUsers[currentUser];
+        if (currentUser) {
+            for (const roomId in rooms) {
+                if (rooms[roomId].players.includes(currentUser) && rooms[roomId].status === 'waiting') {
+                    handlePlayerLeave(socket, roomId);
+                }
+            }
+            delete onlineUsers[currentUser];
+        }
         matchmakingQueue = matchmakingQueue.filter(s => s.id !== socket.id);
+        broadcastRoomList();
         sendAdminUpdate();
     });
 });
