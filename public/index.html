@@ -14,25 +14,41 @@
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-light); margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
         .container { width: 100%; max-width: 1000px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; }
         .active-screen { display: flex; }
+        
+        /* Auth */
         .auth-box { margin: auto; text-align: center; padding: 40px; background-color: rgba(0,0,0,0.2); border-radius: 10px; }
         .auth-box h1 { margin-bottom: 20px; color: var(--primary); }
         .auth-box input { display: block; width: 80%; margin: 10px auto; padding: 10px; border-radius: 5px; border: none; }
+        
+        /* Buttons */
         button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         .btn-primary { background-color: var(--primary); color: white; }
         .btn-secondary { background-color: var(--secondary); color: white; }
         .btn-danger { background-color: var(--danger); color: white; }
         button:hover { opacity: 0.8; }
+        
+        /* Lobby */
         .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: #222; border-bottom: 2px solid var(--primary); }
         .profile-info h3 { margin: 0; }
         .profile-info p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px; }
         .lobby-content { display: flex; flex: 1; overflow: hidden; }
-        .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 20px; border-right: 1px solid #444; }
+        .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto;}
         .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; }
+        
+        /* Leaderboard */
+        .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; overflow: hidden;}
+        .leaderboard-table th, .leaderboard-table td { padding: 10px; text-align: left; border-bottom: 1px solid #444; }
+        .leaderboard-table th { background-color: #111; color: var(--secondary); }
+        .leaderboard-table tr:hover { background-color: rgba(255,255,255,0.05); }
+
+        /* Chat */
         .chat-box { flex: 1; display: flex; flex-direction: column; padding: 10px; }
         .chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; font-size: 14px; }
         .chat-input-area { display: flex; }
         .chat-input-area input { flex: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none; }
         .chat-input-area button { margin: 0; border-radius: 0 5px 5px 0; }
+        
+        /* Game */
         .game-layout { display: flex; flex: 1; padding: 20px; gap: 20px; }
         .board-section { flex: 2; display: flex; flex-direction: column; align-items: center; }
         .grid-6x6 { display: grid; grid-template-columns: repeat(6, 60px); grid-template-rows: repeat(6, 60px); gap: 5px; background-color: var(--grid-bg); padding: 10px; border-radius: 8px; margin-bottom: 20px; user-select: none; }
@@ -70,9 +86,10 @@
         </div>
         <div class="lobby-content">
             <div class="left-panel">
-                <h2>Game Modes</h2>
-                <button class="btn-primary" style="padding: 20px; font-size: 18px;" onclick="findMatch()">Find Match (Ranked)</button>
-                <button class="btn-secondary" style="padding: 20px; font-size: 18px;" onclick="createRoom()">Create Custom Room</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-primary" style="flex: 1; padding: 15px; font-size: 16px;" onclick="findMatch()">Find Ranked Match</button>
+                    <button class="btn-secondary" style="flex: 1; padding: 15px; font-size: 16px;" onclick="createRoom()">Create Custom Room</button>
+                </div>
                 
                 <div id="roomSetup">
                     <h3>Custom Room</h3>
@@ -81,13 +98,30 @@
                     <button class="btn-primary" onclick="startCustomGame()">Start Game Now</button>
                 </div>
 
-                <div style="margin-top: 20px;">
-                    <input type="text" id="joinRoomId" placeholder="Enter Room Code" style="padding: 10px; width: 60%;" />
-                    <button class="btn-secondary" onclick="joinRoom()">Join Room</button>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="joinRoomId" placeholder="Enter Room Code" style="flex: 2; padding: 10px;" />
+                    <button class="btn-secondary" style="flex: 1;" onclick="joinRoom()">Join Room</button>
                 </div>
                 
-                <p id="lobbyMessage" style="color: var(--secondary); font-weight: bold;"></p>
+                <p id="lobbyMessage" style="color: var(--secondary); font-weight: bold; margin: 0;"></p>
+
+                <div style="margin-top: 10px;">
+                    <h3>World Ranking Board</h3>
+                    <table class="leaderboard-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Player</th>
+                                <th>Rank</th>
+                                <th>LP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody">
+                            </tbody>
+                    </table>
+                </div>
             </div>
+            
             <div class="right-panel">
                 <h3 style="padding: 10px 10px 0;">Global Chat</h3>
                 <div class="chat-box">
@@ -160,8 +194,25 @@
             document.getElementById('profileRank').innerText = data.rank;
             document.getElementById('authMessage').innerText = "";
             showScreen('lobbyScreen');
+            socket.emit('getLeaderboard'); // Fetch leaderboard on login
         });
         socket.on('authError', (msg) => document.getElementById('authMessage').innerText = msg);
+
+        // --- Leaderboard Logic ---
+        socket.on('updateLeaderboard', (topPlayers) => {
+            const tbody = document.getElementById('leaderboardBody');
+            tbody.innerHTML = "";
+            topPlayers.forEach((player, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td style="font-weight: bold; color: ${player.username === myUsername ? 'var(--primary)' : 'inherit'};">${player.username}</td>
+                    <td>${player.rank}</td>
+                    <td>${player.lp}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        });
 
         // --- Chat Logic ---
         function sendChat() {
@@ -213,6 +264,7 @@
             showScreen('gameScreen');
             buildBoard(data.board);
             document.getElementById('wordList').innerHTML = "";
+            document.getElementById('wordFeedback').innerText = "";
             clearSelection();
             
             const scoresDiv = document.getElementById('playerScores');
@@ -260,6 +312,9 @@
             document.getElementById('lobbyMessage').innerText = "";
             currentRoomId = "";
             showScreen('lobbyScreen');
+            
+            // Refresh Leaderboard
+            socket.emit('getLeaderboard');
         });
 
         // --- Board Interaction ---
