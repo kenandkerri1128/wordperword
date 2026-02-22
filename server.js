@@ -149,10 +149,25 @@ io.on('connection', (socket) => {
 
             let activeRoom = null;
             for (const roomId in rooms) {
-                if (rooms[roomId].players.includes(currentUser) && !rooms[roomId].isRankedWaiting) {
-                    activeRoom = rooms[roomId];
-                    socket.join(roomId);
-                    break;
+                if (rooms[roomId].players.includes(currentUser)) {
+                    if (rooms[roomId].status === 'playing') {
+                        activeRoom = rooms[roomId];
+                        socket.join(roomId);
+                        break;
+                    } else {
+                        // User refreshed while in a waiting room. Clean them up so they don't get stuck in a frozen state.
+                        socket.leave(roomId);
+                        rooms[roomId].players = rooms[roomId].players.filter(p => p !== currentUser);
+                        
+                        if (rooms[roomId].players.length === 0) {
+                            delete rooms[roomId];
+                        } else if (rooms[roomId].isRankedWaiting) {
+                            delete rooms[roomId].readyStates[currentUser];
+                            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: rooms[roomId].players, readyStates: rooms[roomId].readyStates });
+                        } else {
+                            io.to(roomId).emit('playerJoined', rooms[roomId].players);
+                        }
+                    }
                 }
             }
             const rankData = getRankData(user.lp);
@@ -193,7 +208,9 @@ io.on('connection', (socket) => {
     function beginGameSequence(roomId) {
         const room = rooms[roomId];
         if (!room) return;
-        room.isRankedWaiting = false; // Lock it in case it was a waiting room
+        room.isRankedWaiting = false; 
+        room.status = 'playing'; // Mark room as actively playing to prevent refresh bugs
+        
         io.to(roomId).emit('gameLoading', { roomId: roomId, board: room.board, players: room.players });
         
         setTimeout(() => {
@@ -205,14 +222,12 @@ io.on('connection', (socket) => {
         }, 3000); 
     }
 
-    // --- Ranked Matchmaking (±200 LP Bound & Waiting Room) ---
     socket.on('findMatch', async () => {
         if (!currentUser) return;
         const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', currentUser).single();
         const playerLp = userData ? userData.lp : 0;
         socket.lp = playerLp; 
         
-        // 1. Look for existing Ranked Waiting Room within +/- 200 LP
         let joinedRoomId = null;
         for (const roomId in rooms) {
             const room = rooms[roomId];
@@ -235,13 +250,11 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 2. Not found, add to general queue
         if (!matchmakingQueue.find(s => s.id === socket.id)) {
             matchmakingQueue.push(socket);
             socket.username = currentUser;
         }
 
-        // 3. Process Queue to form a new Waiting Room
         let matchedGroup = [];
         for (let i = 0; i < matchmakingQueue.length; i++) {
             if (Math.abs(matchmakingQueue[i].lp - playerLp) <= 200) {
@@ -250,7 +263,6 @@ io.on('connection', (socket) => {
         }
 
         if (matchedGroup.length >= 2) {
-            // Remove matched players from queue
             matchedGroup.forEach(s => {
                 matchmakingQueue = matchmakingQueue.filter(q => q.id !== s.id);
             });
@@ -267,6 +279,7 @@ io.on('connection', (socket) => {
                 isCustom: false,
                 isAI: false,
                 isRankedWaiting: true,
+                status: 'waiting',
                 baseLp: matchedGroup[0].lp 
             };
             
@@ -279,7 +292,7 @@ io.on('connection', (socket) => {
             
             io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: rooms[roomId].players, readyStates: rooms[roomId].readyStates });
         } else {
-            socket.emit('searchingMatch'); // Visual indicator only
+            socket.emit('searchingMatch'); 
         }
     });
 
@@ -299,7 +312,6 @@ io.on('connection', (socket) => {
             if (room.players.length === 0) {
                 delete rooms[roomId]; 
             } else if (room.players.length === 1) {
-                // Return lone player back to queue
                 const lastUser = room.players[0];
                 const lastSocketId = onlineUsers[lastUser];
                 if (lastSocketId) {
@@ -325,7 +337,6 @@ io.on('connection', (socket) => {
             room.readyStates[currentUser] = true;
             io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: room.players, readyStates: room.readyStates });
             
-            // Start if all players present in room have readied up
             const allReady = room.players.every(p => room.readyStates[p]);
             if (allReady && room.players.length >= 2) {
                 beginGameSequence(roomId);
@@ -335,24 +346,33 @@ io.on('connection', (socket) => {
 
     socket.on('getRoomList', () => {
         const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 4).map(id => ({
-            id: id, players: rooms[id].players.length
+            id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
         }));
         socket.emit('roomListUpdate', availableRooms);
     });
 
-    socket.on('createRoom', () => {
+    socket.on('createRoom', (password) => {
         if (!currentUser) return;
         const roomId = 'custom_' + Date.now();
         socket.join(roomId);
         socket.username = currentUser;
-        rooms[roomId] = { id: roomId, players: [currentUser], board: generateBoard(), time: 120, scores: { [currentUser]: 0 }, words: { [currentUser]: [] }, isCustom: true, host: currentUser, isAI: false, isRankedWaiting: false };
+        rooms[roomId] = { 
+            id: roomId, players: [currentUser], board: generateBoard(), time: 120, 
+            scores: { [currentUser]: 0 }, words: { [currentUser]: [] }, isCustom: true, 
+            host: currentUser, isAI: false, isRankedWaiting: false, status: 'waiting',
+            password: password || null
+        };
         socket.emit('roomCreated', roomId);
         sendAdminUpdate();
     });
 
-    socket.on('joinRoom', (roomId) => {
+    socket.on('joinRoom', (data) => {
+        const { roomId, password } = data;
         if (!currentUser || !rooms[roomId] || rooms[roomId].players.length >= 4) {
             return socket.emit('roomError', 'Room unavailable.');
+        }
+        if (rooms[roomId].password && rooms[roomId].password !== password) {
+            return socket.emit('roomError', 'Incorrect password.');
         }
         socket.join(roomId);
         socket.username = currentUser;
@@ -378,7 +398,7 @@ io.on('connection', (socket) => {
         const aiPlayers = ['AI_Alpha', 'AI_Beta', 'AI_Gamma', 'AI_Delta'];
         const players = [currentUser, ...aiPlayers];
 
-        rooms[roomId] = { id: roomId, players: players, board: generateBoard(), time: 120, scores: {}, words: {}, isCustom: false, isAI: true, isRankedWaiting: false, aiIntervals: [] };
+        rooms[roomId] = { id: roomId, players: players, board: generateBoard(), time: 120, scores: {}, words: {}, isCustom: false, isAI: true, isRankedWaiting: false, status: 'waiting', aiIntervals: [] };
 
         players.forEach(p => {
             rooms[roomId].scores[p] = 0;
@@ -467,7 +487,6 @@ io.on('connection', (socket) => {
         const lpResults = {};
 
         for (const player of sortedPlayers) {
-            // Give AI default stats for endgame screen
             if (player.startsWith('AI_')) {
                 lpResults[player] = { score: room.scores[player], words: room.words[player] || [], lpChange: 0, newLp: 0, rank: "AI Engine", badge: "e.png" };
                 continue;
