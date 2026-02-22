@@ -2,23 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Word Per Word</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Word Per Word - Origin: Mana Siege</title>
     <style>
         :root {
             --bg-color: #1a1a24; --panel-bg: #2a2a35; --primary: #4CAF50;
             --secondary: #2196F3; --danger: #f44336; --text-light: #f1f1f1;
             --text-muted: #aaa; --grid-bg: #333; --tile-bg: #e0e0e0;
-            --tile-text: #111; --tile-selected: #ffc107;
+            --tile-text: #111; --tile-selected: #ffc107; --system-msg: #ff9800;
         }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-light); margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        .container { width: 100%; max-width: 1100px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; }
+        .container { width: 100%; max-width: 1100px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; position: relative; }
         .active-screen { display: flex; }
         
         /* Auth */
-        .auth-box { margin: auto; text-align: center; padding: 40px; background-color: rgba(0,0,0,0.2); border-radius: 10px; }
+        .auth-box { margin: auto; text-align: center; padding: 40px; background-color: rgba(0,0,0,0.2); border-radius: 10px; width: 80%; max-width: 400px; }
         .auth-box h1 { margin-bottom: 20px; color: var(--primary); }
-        .auth-box input { display: block; width: 80%; margin: 10px auto; padding: 10px; border-radius: 5px; border: none; }
+        .auth-box input { display: block; width: calc(100% - 20px); box-sizing: border-box; margin: 10px auto; padding: 10px; border-radius: 5px; border: none; }
         
         /* Buttons */
         button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
@@ -27,9 +27,10 @@
         .btn-danger { background-color: var(--danger); color: white; }
         .btn-admin { background-color: #9c27b0; color: white; display: none; }
         button:hover { opacity: 0.8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         
         /* Lobby */
-        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: #222; border-bottom: 2px solid var(--primary); }
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: #222; border-bottom: 2px solid var(--primary); flex-wrap: wrap; gap: 10px; }
         .profile-info { display: flex; align-items: center; gap: 15px; }
         .profile-text h3 { margin: 0; }
         .profile-text p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px; }
@@ -40,6 +41,7 @@
         
         /* Play Now Menu */
         .play-menu { display: none; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+        .play-menu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 15px; }
         
         /* Leaderboard */
         .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; overflow: hidden;}
@@ -48,36 +50,62 @@
         .badge-cell { width: 60px; text-align: center; }
 
         /* Chat */
-        .chat-box { flex: 1; display: flex; flex-direction: column; padding: 10px; }
-        .chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; font-size: 14px; }
+        .chat-box { flex: 1; display: flex; flex-direction: column; padding: 10px; overflow: hidden; }
+        .chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; font-size: 14px; word-wrap: break-word; }
         .chat-input-area { display: flex; }
-        .chat-input-area input { flex: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none; }
+        .chat-input-area input { flex: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none; min-width: 0; }
         .chat-input-area button { margin: 0; border-radius: 0 5px 5px 0; }
+        .msg-system { color: var(--system-msg); font-weight: bold; }
         
+        /* Loading Screen */
+        #loadingScreen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(26, 26, 36, 0.95); z-index: 50; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+        .spinner { border: 6px solid #333; border-top: 6px solid var(--primary); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
         /* Game */
-        .game-layout { display: flex; flex: 1; padding: 20px; gap: 20px; }
-        .board-section { flex: 2; display: flex; flex-direction: column; align-items: center; }
+        .game-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
+        .board-section { flex: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .grid-6x6 { display: grid; grid-template-columns: repeat(6, 60px); grid-template-rows: repeat(6, 60px); gap: 5px; background-color: var(--grid-bg); padding: 10px; border-radius: 8px; margin-bottom: 20px; user-select: none; }
-        .tile { background-color: var(--tile-bg); color: var(--tile-text); font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; box-shadow: 0 4px 0px #999; }
+        .tile { background-color: var(--tile-bg); color: var(--tile-text); font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; box-shadow: 0 4px 0px #999; touch-action: manipulation; }
         .tile.selected { background-color: var(--tile-selected); box-shadow: 0 2px 0px #b28704; transform: translateY(2px); }
-        .word-builder { display: flex; gap: 10px; align-items: center; }
-        .current-word { font-size: 24px; letter-spacing: 2px; min-width: 150px; text-align: center; padding: 10px; background: #111; border-radius: 5px; }
-        .side-section { flex: 1; display: flex; flex-direction: column; gap: 15px; }
-        .player-list, .found-words { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px; overflow-y: auto; }
-        .found-words { flex: 1; }
-        .timer { font-size: 32px; font-weight: bold; color: var(--danger); text-align: center; }
+        .word-builder { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+        .current-word { font-size: 24px; letter-spacing: 2px; min-width: 150px; text-align: center; padding: 10px; background: #111; border-radius: 5px; min-height: 28px; }
+        .side-section { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .player-list, .found-words { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px; overflow-y: auto; flex: 1; }
+        .timer { font-size: 32px; font-weight: bold; color: var(--danger); text-align: center; margin-bottom: 10px; }
         
+        /* Spectator Grid */
+        .spectator-views { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .spec-player { background: #222; padding: 10px; border-radius: 5px; border-left: 3px solid var(--secondary); }
+        .spec-words { font-size: 12px; color: #ccc; margin-top: 5px; max-height: 80px; overflow-y: auto; }
+
         /* Game Over Modal */
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
-        .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 80%; max-width: 600px; }
+        .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
         .result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; }
         
         /* Admin Panel */
-        #adminPanel { display: none; position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; background: #1a1a24; border: 2px solid #9c27b0; border-radius: 10px; z-index: 200; flex-direction: column; padding: 20px; box-shadow: 0 0 20px #9c27b0; }
+        #adminPanel { display: none; position: absolute; top: 5%; left: 5%; width: 90%; height: 90%; background: #1a1a24; border: 2px solid #9c27b0; border-radius: 10px; z-index: 200; flex-direction: column; padding: 20px; box-sizing: border-box; box-shadow: 0 0 20px #9c27b0; }
         .admin-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #9c27b0; padding-bottom: 10px; margin-bottom: 15px; }
         .admin-body { display: flex; gap: 20px; flex: 1; overflow: hidden; }
         .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
         .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
+
+        /* Mobile Responsive Overhaul */
+        @media (max-width: 768px) {
+            body { align-items: flex-start; }
+            .container { height: 100vh; border-radius: 0; }
+            .lobby-content { flex-direction: column; }
+            .left-panel { flex: 1; border-right: none; border-bottom: 2px solid #444; overflow-y: visible; }
+            .right-panel { flex: 1; }
+            .game-layout { flex-direction: column; overflow-y: auto; }
+            .board-section { flex: none; }
+            .grid-6x6 { grid-template-columns: repeat(6, 12vw); grid-template-rows: repeat(6, 12vw); gap: 1vw; }
+            .tile { font-size: 6vw; }
+            .side-section { flex: none; overflow: visible; }
+            .player-list, .found-words { max-height: 200px; }
+            .admin-body { flex-direction: column; }
+        }
     </style>
 </head>
 <body>
@@ -115,8 +143,11 @@
                 <button class="btn-primary" style="font-size: 20px; padding: 15px;" onclick="togglePlayMenu()">PLAY NOW</button>
                 
                 <div id="playMenu" class="play-menu">
-                    <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
-                    <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                    <div class="play-menu-grid">
+                        <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
+                        <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
+                        <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                    </div>
                     <hr style="border-color: #444; margin: 15px 0;">
                     <h4>Active Custom Rooms</h4>
                     <div id="roomList" style="text-align: left;"></div>
@@ -128,10 +159,12 @@
                 </div>
 
                 <h2>World Ranking</h2>
-                <table class="leaderboard-table">
-                    <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th></tr></thead>
-                    <tbody id="leaderboardBody"></tbody>
-                </table>
+                <div style="overflow-x: auto;">
+                    <table class="leaderboard-table">
+                        <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th></tr></thead>
+                        <tbody id="leaderboardBody"></tbody>
+                    </table>
+                </div>
             </div>
             
             <div class="right-panel">
@@ -146,35 +179,43 @@
         </div>
     </div>
 
+    <div id="loadingScreen">
+        <div class="spinner"></div>
+        <h2 style="color: var(--primary);">Preparing Board...</h2>
+        <p id="loadingPlayers" style="color: var(--text-muted);"></p>
+    </div>
+
     <div id="gameScreen" class="container">
         <div class="game-layout">
             <div class="board-section">
                 <div class="timer" id="gameTimer">2:00</div>
                 <div class="grid-6x6" id="gameBoard"></div>
-                <div class="word-builder">
+                <div class="word-builder" id="gameControls">
                     <div class="current-word" id="currentWordDisplay"></div>
                     <button class="btn-primary" onclick="submitWord()">Submit</button>
                     <button class="btn-secondary" onclick="clearWord()">Clear</button>
                 </div>
-                <p id="wordMessage" style="margin-top: 10px; font-weight: bold;"></p>
+                <p id="wordMessage" style="margin-top: 10px; font-weight: bold; min-height: 20px;"></p>
             </div>
             
             <div class="side-section">
                 <div class="player-list">
-                    <h3>Opponents</h3>
+                    <h3 id="opponentsTitle">Opponents</h3>
                     <ul id="gamePlayerList" style="list-style: none; padding: 0;"></ul>
+                    <div id="spectatorViews" class="spectator-views" style="display: none;"></div>
                 </div>
-                <div class="found-words">
+                <div class="found-words" id="myScoreSection">
                     <h3>My Score: <span id="myGameScore">0</span></h3>
                     <ul id="myFoundWordsList" style="list-style: none; padding: 0; color: var(--secondary);"></ul>
                 </div>
+                <button id="quitGameBtn" class="btn-danger" style="margin-top: auto;" onclick="quitGame()">Quit Game (Penalty)</button>
             </div>
         </div>
     </div>
 
     <div id="gameOverModal" class="modal">
         <div class="modal-content">
-            <h1 style="color: var(--primary);">Time's Up!</h1>
+            <h1 style="color: var(--primary);">Match Concluded</h1>
             <h2>Final Results</h2>
             <div id="gameOverResults" style="margin-top: 20px; text-align: left;"></div>
             <button class="btn-primary" style="margin-top: 20px;" onclick="returnToLobby()">Return to Lobby</button>
@@ -186,7 +227,7 @@
             <h2>Admin Control Panel (Kei)</h2>
             <button class="btn-danger" onclick="closeAdminPanel()">Close X</button>
         </div>
-        <div style="margin-bottom: 15px; display: flex;">
+        <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
             <input type="text" id="adminBroadcastInput" placeholder="System Broadcast Message..." style="flex: 1; padding: 10px;">
             <button class="btn-secondary" onclick="adminBroadcast()">Broadcast</button>
         </div>
@@ -207,6 +248,7 @@
         const socket = io();
         let currentRoom = null;
         let myUsername = null;
+        let isSpectator = false;
 
         // BGM Handling
         const bgmMenu = document.getElementById('bgmMenu');
@@ -223,7 +265,15 @@
             bgmGame.play().catch(e => console.log("Audio play blocked until interaction."));
         }
 
-        // --- Auth ---
+        // --- Session Persistence & Auth ---
+        window.onload = () => {
+            const savedUser = localStorage.getItem('wpw_user');
+            const savedPass = localStorage.getItem('wpw_pass');
+            if (savedUser && savedPass) {
+                socket.emit('reconnectUser', { username: savedUser, password: savedPass });
+            }
+        };
+
         function register() {
             const u = document.getElementById('usernameInput').value;
             const p = document.getElementById('passwordInput').value;
@@ -236,6 +286,8 @@
         }
         function logout() {
             socket.emit('logout');
+            localStorage.removeItem('wpw_user');
+            localStorage.removeItem('wpw_pass');
             myUsername = null;
             document.getElementById('authScreen').classList.add('active-screen');
             document.getElementById('lobbyScreen').classList.remove('active-screen');
@@ -244,14 +296,15 @@
 
         socket.on('authSuccess', (data) => {
             myUsername = data.username;
+            // Save credentials for Session Persistence
+            localStorage.setItem('wpw_user', document.getElementById('usernameInput').value || myUsername);
+            localStorage.setItem('wpw_pass', document.getElementById('passwordInput').value || localStorage.getItem('wpw_pass'));
+            
             document.getElementById('authMessage').innerText = '';
             document.getElementById('authScreen').classList.remove('active-screen');
             document.getElementById('lobbyScreen').classList.add('active-screen');
             
-            document.getElementById('profileUsername').innerText = data.username;
-            document.getElementById('profileRank').innerText = data.rank;
-            document.getElementById('profileLp').innerText = data.lp;
-            document.getElementById('headerBadge').src = `assets/${data.badge}`;
+            updateProfileUI(data);
             
             if (myUsername === 'Kei') document.getElementById('adminBtn').style.display = 'inline-block';
             else document.getElementById('adminBtn').style.display = 'none';
@@ -261,9 +314,26 @@
             socket.emit('getRoomList');
         });
 
-        socket.on('authError', (msg) => document.getElementById('authMessage').innerText = msg);
-        socket.on('adminKicked', () => { alert("You have been kicked by the Admin."); window.location.reload(); });
-        socket.on('serverBroadcast', (msg) => { alert("SERVER BROADCAST: " + msg); });
+        socket.on('authError', (msg) => {
+            document.getElementById('authMessage').innerText = msg;
+            if (msg.includes("another tab") || msg.includes("expired")) {
+                localStorage.removeItem('wpw_user');
+                localStorage.removeItem('wpw_pass');
+            }
+        });
+        
+        socket.on('adminKicked', () => { 
+            localStorage.removeItem('wpw_user'); 
+            alert("You have been kicked by the Admin."); 
+            window.location.reload(); 
+        });
+
+        function updateProfileUI(data) {
+            document.getElementById('profileUsername').innerText = data.username;
+            document.getElementById('profileRank').innerText = data.rank;
+            document.getElementById('profileLp').innerText = data.lp;
+            document.getElementById('headerBadge').src = `assets/${data.badge}`;
+        }
 
         // --- Lobby & Chat ---
         function sendChat() {
@@ -277,7 +347,9 @@
         
         socket.on('receiveChat', (data) => {
             const box = document.getElementById('chatMessages');
-            box.innerHTML += `<div><strong>[${data.rank}] ${data.username}:</strong> ${data.message}</div>`;
+            const isSystem = data.username === 'SYSTEM';
+            const msgClass = isSystem ? 'msg-system' : '';
+            box.innerHTML += `<div class="${msgClass}"><strong>[${data.rank}] ${data.username}:</strong> ${data.message}</div>`;
             box.scrollTop = box.scrollHeight;
         });
 
@@ -305,6 +377,7 @@
             socket.emit('findMatch');
             document.getElementById('playMenu').innerHTML = '<h3>Searching for players...</h3>';
         }
+        function startAIMatch() { socket.emit('startAIMatch'); }
         function createCustomRoom() { socket.emit('createRoom'); }
         function joinCustomRoom(roomId) { socket.emit('joinRoom', roomId); }
         function startCustomGame() { if(currentRoom) socket.emit('startCustomGame', currentRoom); }
@@ -325,37 +398,58 @@
             const list = document.getElementById('roomList');
             list.innerHTML = rooms.length === 0 ? '<p>No open custom rooms.</p>' : '';
             rooms.forEach(r => {
-                list.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:5px; background: #333; padding: 10px; border-radius: 5px;">
+                list.innerHTML += `<div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:5px; background: #333; padding: 10px; border-radius: 5px;">
                     <span>Room: ${r.id} (${r.players}/4)</span>
                     <button class="btn-secondary" onclick="joinCustomRoom('${r.id}')">Join</button>
                 </div>`;
             });
         });
 
-        // --- Gameplay ---
+        // --- Gameplay Loading & Initialization ---
         let selectedTiles = [];
         let currentWordStr = "";
 
-        socket.on('gameStart', (data) => {
+        socket.on('gameLoading', (data) => {
             currentRoom = data.roomId;
             document.getElementById('lobbyScreen').classList.remove('active-screen');
-            document.getElementById('gameScreen').classList.add('active-screen');
             document.getElementById('playMenu').style.display = 'none';
+            document.getElementById('loadingPlayers').innerText = "Players: " + data.players.join(' VS ');
+            document.getElementById('loadingScreen').style.display = 'flex';
+        });
+
+        socket.on('gameStart', (data) => {
+            document.getElementById('loadingScreen').style.display = 'none';
+            setupGameBoard(data);
+        });
+
+        socket.on('rejoinGame', (data) => {
+            document.getElementById('authScreen').classList.remove('active-screen');
+            setupGameBoard(data);
+            
+            // Restore previous state
+            document.getElementById('myGameScore').innerText = data.myScore;
+            data.myWords.forEach(w => {
+                document.getElementById('myFoundWordsList').innerHTML += `<li>${w}</li>`;
+            });
+            const mins = Math.floor(data.time / 60);
+            const secs = data.time % 60;
+            document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        });
+
+        function setupGameBoard(data) {
+            isSpectator = false;
+            currentRoom = data.roomId;
+            document.getElementById('gameScreen').classList.add('active-screen');
+            document.getElementById('gameControls').style.display = 'flex';
+            document.getElementById('myScoreSection').style.display = 'block';
+            document.getElementById('spectatorViews').style.display = 'none';
+            document.getElementById('gamePlayerList').style.display = 'block';
+            document.getElementById('quitGameBtn').style.display = 'block';
+            document.getElementById('opponentsTitle').innerText = 'Opponents';
             playGameMusic();
             
-            // Build Board
-            const boardDiv = document.getElementById('gameBoard');
-            boardDiv.innerHTML = '';
-            for (let i = 0; i < 36; i++) {
-                const tile = document.createElement('div');
-                tile.className = 'tile';
-                tile.innerText = data.board[i];
-                tile.dataset.index = i;
-                tile.onclick = () => selectTile(tile);
-                boardDiv.appendChild(tile);
-            }
+            renderBoard(data.board);
 
-            // Hide opponent scores, just show names
             const pList = document.getElementById('gamePlayerList');
             pList.innerHTML = '';
             data.players.forEach(p => {
@@ -367,7 +461,20 @@
             document.getElementById('myGameScore').innerText = '0';
             document.getElementById('myFoundWordsList').innerHTML = '';
             clearWord();
-        });
+        }
+
+        function renderBoard(boardStr) {
+            const boardDiv = document.getElementById('gameBoard');
+            boardDiv.innerHTML = '';
+            for (let i = 0; i < 36; i++) {
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+                tile.innerText = boardStr[i];
+                tile.dataset.index = i;
+                tile.onclick = () => { if (!isSpectator) selectTile(tile); };
+                boardDiv.appendChild(tile);
+            }
+        }
 
         function selectTile(tile) {
             if (tile.classList.contains('selected')) return;
@@ -401,13 +508,15 @@
                 msg.innerText = `+${data.points} points!`;
                 msg.style.color = "var(--primary)";
                 document.getElementById('myFoundWordsList').innerHTML += `<li>${data.word} (+${data.points})</li>`;
+                // Auto scroll
+                const wordsList = document.getElementById('myScoreSection');
+                wordsList.scrollTop = wordsList.scrollHeight;
             } else {
                 msg.innerText = "Invalid or already found.";
                 msg.style.color = "var(--danger)";
             }
         });
 
-        // Only updates YOUR score visually
         socket.on('myScoreUpdate', (newScore) => {
             document.getElementById('myGameScore').innerText = newScore;
         });
@@ -416,6 +525,19 @@
             const mins = Math.floor(time / 60);
             const secs = time % 60;
             document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        });
+
+        // --- Quit Penalty Logic ---
+        function quitGame() {
+            if (confirm("Are you sure you want to quit? You will lose LP and receive a loss penalty.")) {
+                socket.emit('quitMatch', currentRoom);
+            }
+        }
+
+        socket.on('quitSuccess', (data) => {
+            alert(`You have quit the match. Penalty: ${data.penalty} LP.`);
+            updateProfileUI(data);
+            returnToLobby();
         });
 
         // --- Game Over ---
@@ -441,11 +563,8 @@
                     </div>
                 </div>`;
                 
-                // Update local profile if it's you
                 if (p === myUsername) {
-                    document.getElementById('profileRank').innerText = res.rank;
-                    document.getElementById('profileLp').innerText = res.newLp;
-                    document.getElementById('headerBadge').src = `assets/${res.badge}`;
+                    updateProfileUI(res);
                 }
             });
 
@@ -459,11 +578,29 @@
             currentRoom = null;
             document.getElementById('roomSetup').style.display = 'none';
             
+            // Reset Play Menu explicitly for next time
+            document.getElementById('playMenu').style.display = 'none';
+            document.getElementById('playMenu').innerHTML = `
+                <div class="play-menu-grid">
+                    <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
+                    <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
+                    <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                </div>
+                <hr style="border-color: #444; margin: 15px 0;">
+                <h4>Active Custom Rooms</h4>
+                <div id="roomList" style="text-align: left;"></div>
+                <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                    <h3>Custom Room: <span id="customRoomIdText"></span></h3>
+                    <p>Players: <span id="customPlayerCount">1</span>/4</p>
+                    <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+                </div>
+            `;
+            
             playMenuMusic();
             socket.emit('getLeaderboard');
         }
 
-        // --- Admin Panel ---
+        // --- Admin Panel & Spectator Mode ---
         function openAdminPanel() {
             document.getElementById('adminPanel').style.display = 'flex';
             socket.emit('requestAdminData');
@@ -497,8 +634,44 @@
         });
 
         socket.on('spectateStart', (data) => {
-            // Basic hook to view a board as Admin (can be expanded later)
-            alert("Spectating Room: " + data.roomId + "\nPlayers: " + data.players.join(', '));
+            isSpectator = true;
+            currentRoom = data.roomId;
+            document.getElementById('lobbyScreen').classList.remove('active-screen');
+            document.getElementById('gameScreen').classList.add('active-screen');
+            
+            // Layout Adjustments for Spectator
+            document.getElementById('gameControls').style.display = 'none';
+            document.getElementById('myScoreSection').style.display = 'none';
+            document.getElementById('gamePlayerList').style.display = 'none';
+            document.getElementById('quitGameBtn').style.display = 'none';
+            document.getElementById('opponentsTitle').innerText = 'Spectating Mode';
+            
+            const specViews = document.getElementById('spectatorViews');
+            specViews.style.display = 'grid';
+            specViews.innerHTML = '';
+            
+            data.players.forEach(p => {
+                specViews.innerHTML += `
+                <div class="spec-player" id="specBox_${p}">
+                    <strong>${p}</strong> - <span id="specScore_${p}">0</span> pts
+                    <div class="spec-words" id="specWords_${p}"></div>
+                </div>`;
+            });
+
+            renderBoard(data.board);
+        });
+
+        socket.on('spectatorUpdate', (data) => {
+            if (!isSpectator) return;
+            const scoreSpan = document.getElementById(`specScore_${data.player}`);
+            const wordsDiv = document.getElementById(`specWords_${data.player}`);
+            
+            if (scoreSpan && wordsDiv) {
+                const currentScore = parseInt(scoreSpan.innerText) || 0;
+                scoreSpan.innerText = currentScore + data.points;
+                wordsDiv.innerHTML += `<div>${data.word} (+${data.points})</div>`;
+                wordsDiv.scrollTop = wordsDiv.scrollHeight;
+            }
         });
 
     </script>
