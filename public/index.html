@@ -557,6 +557,9 @@
         }
 
         function selectTile(tile) {
+            // FIX: Resume audio automatically if browser blocked it on page reload
+            if (bgmGame.paused && !isSpectator) playGameMusic();
+            
             if (tile.classList.contains('selected')) return;
             tile.classList.add('selected');
             selectedTiles.push(tile);
