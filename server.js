@@ -106,7 +106,7 @@ async function getPlayerWorldRank(username, lp) {
         .select('*', { count: 'exact', head: true })
         .gt('lp', lp);
     if (error) return "?";
-    return count + 1; // Rank is the amount of people strictly greater than you + 1
+    return count + 1;
 }
 
 function broadcastRoomList() {
@@ -430,7 +430,12 @@ io.on('connection', (socket) => {
 
     socket.on('startCustomGame', (roomId) => {
         if (rooms[roomId] && rooms[roomId].host === currentUser) {
-            beginGameSequence(roomId);
+            // STRICT 2-PLAYER MINIMUM FIX
+            if (rooms[roomId].players.length >= 2) {
+                beginGameSequence(roomId);
+            } else {
+                socket.emit('roomError', 'A minimum of 2 players is required to start the game!');
+            }
         }
     });
 
@@ -499,7 +504,6 @@ io.on('connection', (socket) => {
         room.scores[currentUser] = -9999; 
         socket.leave(roomId);
         
-        // Zero deduction for AI match quit, otherwise -20
         const lpChange = room.isAI ? 0 : -20;
         const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', currentUser).single();
         let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
@@ -544,7 +548,7 @@ io.on('connection', (socket) => {
 
             if (room.isAI) {
                 if (!isConnected || hasForfeited) {
-                    lpChange = 0; // No deduction for loss/quit in AI
+                    lpChange = 0; 
                 } else {
                     lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
                 }
