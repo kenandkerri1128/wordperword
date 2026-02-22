@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -16,11 +17,67 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory active game data (Rooms and Matchmaking don't go in the database)
+// --- Dictionary / Trie Setup ---
+class TrieNode {
+    constructor() {
+        this.children = {};
+        this.isEndOfWord = false;
+    }
+}
+
+class Trie {
+    constructor() {
+        this.root = new TrieNode();
+    }
+    insert(word) {
+        let current = this.root;
+        for (let char of word) {
+            if (!current.children[char]) {
+                current.children[char] = new TrieNode();
+            }
+            current = current.children[char];
+        }
+        current.isEndOfWord = true;
+    }
+    search(word) {
+        let current = this.root;
+        for (let char of word) {
+            if (!current.children[char]) return false;
+            current = current.children[char];
+        }
+        return current.isEndOfWord;
+    }
+}
+
+const dictionaryTrie = new Trie();
+
+// Load the words.txt file into the Trie on server startup
+try {
+    const dictPath = path.join(__dirname, 'words.txt');
+    if (fs.existsSync(dictPath)) {
+        const fileContent = fs.readFileSync(dictPath, 'utf-8');
+        const words = fileContent.split(/\r?\n/);
+        let wordCount = 0;
+        words.forEach(w => {
+            const cleanWord = w.trim().toUpperCase();
+            if (cleanWord) {
+                dictionaryTrie.insert(cleanWord);
+                wordCount++;
+            }
+        });
+        console.log(`Dictionary loaded successfully with ${wordCount} words!`);
+    } else {
+        console.warn("WARNING: words.txt not found. Dictionary validation will fail.");
+    }
+} catch (err) {
+    console.error("Error loading dictionary:", err);
+}
+
+// In-memory active game data
 const rooms = {}; 
 let matchmakingQueue = [];
 
-// Updated Ranking Logic (Linguist Theme)
+// Ranking Logic (Linguist Theme)
 function getRank(lp) {
     if (lp <= 50) return "Novice Scribe";
     if (lp <= 100) return "Apprentice Lexis";
@@ -47,22 +104,30 @@ function getWordScore(wordLength) {
 }
 
 // Generate 6x6 Board (36 letters)
+// Using standard Boggle letter distributions to make forming words easier
 function generateBoard() {
-    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const vowels = "AAAAAEEEEEEIIIIIOOOOOUUUUY";
+    const consonants = "BBCCDDFFGGHHHJKLLLLMMNNNNPPQRRRRSSSSTTTTVVWXZ";
     let board = "";
-    for (let i = 0; i < 36; i++) {
-        board += letters.charAt(Math.floor(Math.random() * letters.length));
+    
+    // Ensure a decent mix of vowels and consonants for a 36-tile board
+    for (let i = 0; i < 12; i++) {
+        board += vowels.charAt(Math.floor(Math.random() * vowels.length));
     }
-    return board;
+    for (let i = 0; i < 24; i++) {
+        board += consonants.charAt(Math.floor(Math.random() * consonants.length));
+    }
+    
+    // Shuffle the board string
+    return board.split('').sort(() => 0.5 - Math.random()).join('');
 }
 
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
     let currentUser = null;
 
-    // --- Authentication (Supabase Integration) ---
+    // --- Authentication ---
     socket.on('register', async (data) => {
-        // Check if username exists
         const { data: existingUser, error: searchError } = await supabase
             .from('Wordiers')
             .select('username')
@@ -76,7 +141,6 @@ io.on('connection', (socket) => {
 
         const initialRank = getRank(0);
         
-        // Insert new user
         const { error: insertError } = await supabase
             .from('Wordiers')
             .insert([{ username: data.username, password: data.password, lp: 0, rank: initialRank }]);
@@ -99,7 +163,6 @@ io.on('connection', (socket) => {
 
         if (user) {
             currentUser = user.username;
-            // Ensure rank is up to date based on LP on login
             const currentRank = getRank(user.lp);
             if (user.rank !== currentRank) {
                 await supabase.from('Wordiers').update({ rank: currentRank }).eq('username', user.username);
@@ -117,13 +180,11 @@ io.on('connection', (socket) => {
     // --- Lobby & Chat ---
     socket.on('sendChat', async (message) => {
         if (!currentUser) return;
-        
         const { data: user } = await supabase
             .from('Wordiers')
             .select('rank')
             .eq('username', currentUser)
             .single();
-            
         const rank = user ? user.rank : "Unknown";
         io.emit('receiveChat', { username: currentUser, rank: rank, message });
     });
@@ -135,7 +196,6 @@ io.on('connection', (socket) => {
             .select('username, lp, rank')
             .order('lp', { ascending: false })
             .limit(10);
-            
         if (!error && topPlayers) {
             socket.emit('updateLeaderboard', topPlayers);
         }
@@ -149,17 +209,16 @@ io.on('connection', (socket) => {
             socket.username = currentUser;
         }
 
-        // Test mode: 2 players. Change to 4 for full production.
         if (matchmakingQueue.length >= 2) { 
             const roomPlayers = matchmakingQueue.splice(0, 4);
             const roomId = 'room_' + Date.now();
-            
             const board = generateBoard();
+            
             rooms[roomId] = {
                 id: roomId,
                 players: roomPlayers.map(p => p.username),
                 board: board,
-                time: 120, // 2 minutes
+                time: 120,
                 scores: {},
                 words: {} 
             };
@@ -228,27 +287,37 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- Gameplay ---
+    // --- Gameplay / Dictionary Validation ---
     socket.on('submitWord', (data) => {
         const { roomId, word } = data;
         const room = rooms[roomId];
         if (!room || !currentUser) return;
 
-        if (room.words[currentUser].includes(word)) {
+        const cleanWord = word.toUpperCase();
+
+        if (cleanWord.length < 3) {
+            socket.emit('wordResult', { success: false, message: 'Word too short!' });
+            return;
+        }
+
+        if (room.words[currentUser].includes(cleanWord)) {
             socket.emit('wordResult', { success: false, message: 'Already found!' });
             return;
         }
 
-        if (word.length >= 3) {
-            const points = getWordScore(word.length);
-            room.scores[currentUser] += points;
-            room.words[currentUser].push(word);
-
-            socket.emit('wordResult', { success: true, word: word, points: points });
-            io.to(roomId).emit('scoreUpdate', room.scores);
-        } else {
-            socket.emit('wordResult', { success: false, message: 'Word too short!' });
+        // Check against our Trie Dictionary!
+        if (!dictionaryTrie.search(cleanWord)) {
+            socket.emit('wordResult', { success: false, message: 'Not a valid English word!' });
+            return;
         }
+
+        // If it passes the dictionary check, award points
+        const points = getWordScore(cleanWord.length);
+        room.scores[currentUser] += points;
+        room.words[currentUser].push(cleanWord);
+
+        socket.emit('wordResult', { success: true, word: cleanWord, points: points });
+        io.to(roomId).emit('scoreUpdate', room.scores);
     });
 
     function startGameTimer(roomId) {
@@ -270,7 +339,6 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (!room) return;
 
-        // Determine winner
         let highestScore = -1;
         let winners = [];
         for (const [player, score] of Object.entries(room.scores)) {
@@ -284,9 +352,7 @@ io.on('connection', (socket) => {
 
         const lpResults = {};
 
-        // Process each player and update Supabase
         for (const player of room.players) {
-            // Fetch current LP
             const { data: userData } = await supabase
                 .from('Wordiers')
                 .select('lp')
@@ -304,7 +370,6 @@ io.on('connection', (socket) => {
 
             const newRank = getRank(newLp);
 
-            // Save to database
             await supabase
                 .from('Wordiers')
                 .update({ lp: newLp, rank: newRank })
