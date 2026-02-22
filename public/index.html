@@ -133,7 +133,11 @@
                     <div id="playMenuGrid" class="play-menu-grid">
                         <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
                         <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
-                        <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                        
+                        <div style="display: flex; gap: 5px; flex-direction: column;">
+                            <input type="text" id="customRoomPassword" placeholder="Optional Room Password..." style="padding: 10px; border-radius: 5px; border: none; background: rgba(255,255,255,0.1); color: white;" />
+                            <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                        </div>
                     </div>
 
                     <div id="searchingState" style="display:none; padding: 15px;">
@@ -301,7 +305,6 @@
 
         socket.on('authSuccess', (data) => {
             myUsername = data.username;
-            // The Fix: Never save the raw input value directly to avoid "undefined" strings.
             localStorage.setItem('wpw_user', data.username);
             const passInput = document.getElementById('passwordInput').value;
             if(passInput) localStorage.setItem('wpw_pass', passInput);
@@ -371,7 +374,6 @@
             });
         });
 
-        // --- Play Now / Ranked Menu ---
         function togglePlayMenu() {
             const menu = document.getElementById('playMenu');
             menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
@@ -390,7 +392,6 @@
         }
 
         socket.on('searchingMatch', () => {
-            // Re-trigger visual searching state if dropped from a dead room
             document.getElementById('rankedWaitingRoom').style.display = 'none';
             document.getElementById('searchingState').style.display = 'block';
         });
@@ -424,8 +425,22 @@
         }
 
         function startAIMatch() { socket.emit('startAIMatch'); }
-        function createCustomRoom() { socket.emit('createRoom'); }
-        function joinCustomRoom(roomId) { socket.emit('joinRoom', roomId); }
+        
+        function createCustomRoom() { 
+            const pwd = document.getElementById('customRoomPassword').value;
+            socket.emit('createRoom', pwd); 
+            document.getElementById('customRoomPassword').value = '';
+        }
+
+        function joinCustomRoom(roomId, isLocked) { 
+            let pwd = null;
+            if (isLocked) {
+                pwd = prompt("This room is locked. Enter password:");
+                if (pwd === null) return; 
+            }
+            socket.emit('joinRoom', { roomId: roomId, password: pwd }); 
+        }
+
         function startCustomGame() { if(currentRoom) socket.emit('startCustomGame', currentRoom); }
 
         socket.on('roomCreated', (roomId) => {
@@ -444,14 +459,16 @@
             const list = document.getElementById('roomList');
             list.innerHTML = rooms.length === 0 ? '<p>No open custom rooms.</p>' : '';
             rooms.forEach(r => {
+                const lockIcon = r.isLocked ? '🔒 ' : '';
                 list.innerHTML += `<div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:5px; background: #333; padding: 10px; border-radius: 5px;">
-                    <span>Room: ${r.id} (${r.players}/4)</span>
-                    <button class="btn-secondary" onclick="joinCustomRoom('${r.id}')">Join</button>
+                    <span>${lockIcon}Room: ${r.id} (${r.players}/4)</span>
+                    <button class="btn-secondary" onclick="joinCustomRoom('${r.id}', ${r.isLocked})">Join</button>
                 </div>`;
             });
         });
 
-        // --- Gameplay Loading & Initialization ---
+        socket.on('roomError', (msg) => { alert(msg); });
+
         let selectedTiles = [];
         let currentWordStr = "";
 
@@ -583,7 +600,6 @@
             returnToLobby();
         });
 
-        // --- Game Over ---
         socket.on('gameOver', (data) => {
             const resultsDiv = document.getElementById('gameOverResults');
             resultsDiv.innerHTML = '';
@@ -635,7 +651,6 @@
             socket.emit('getLeaderboard');
         }
 
-        // --- Admin Panel & Spectator Mode ---
         function openAdminPanel() {
             document.getElementById('adminPanel').style.display = 'flex';
             socket.emit('requestAdminData');
@@ -707,7 +722,6 @@
                 wordsDiv.scrollTop = wordsDiv.scrollHeight;
             }
         });
-
     </script>
 </body>
 </html>
