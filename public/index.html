@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Word Per Word</title>
+    <title>Word Per Word - Origin: Mana Siege</title>
     <style>
         :root {
             --bg-color: #1a1a24; --panel-bg: #2a2a35; --primary: #4CAF50;
@@ -151,7 +151,7 @@
                         <ul id="rankedWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
                         <div style="display: flex; justify-content: center; gap: 10px;">
                             <button id="readyRankedBtn" class="btn-primary" onclick="readyRanked()">Ready Up</button>
-                            <button class="btn-danger" onclick="leaveRankedRoom()">Leave Room</button>
+                            <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
                         </div>
                     </div>
 
@@ -159,10 +159,15 @@
                         <hr style="border-color: #444; margin: 15px 0;">
                         <h4>Active Custom Rooms</h4>
                         <div id="roomList" style="text-align: left;"></div>
+                        
                         <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
                             <h3>Custom Room: <span id="customRoomIdText"></span></h3>
+                            <ul id="customWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
                             <p>Players: <span id="customPlayerCount">1</span>/4</p>
-                            <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+                            <div style="display: flex; justify-content: center; gap: 10px;">
+                                <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+                                <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -407,7 +412,11 @@
             list.innerHTML = '';
             data.players.forEach(p => {
                 const status = data.readyStates[p] ? '<span style="color: var(--primary)">Ready</span>' : '<span style="color: var(--text-muted)">Waiting...</span>';
-                list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;"><strong>${p}</strong> - ${status}</li>`;
+                const info = data.playerDetails ? data.playerDetails[p] : { worldRank: '?', lpRank: '?' };
+                
+                list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;">
+                    <strong>${p}</strong> <span style="font-size: 14px; color: var(--secondary);">(#${info.worldRank} World | ${info.lpRank})</span> - ${status}
+                </li>`;
             });
             
             if(data.readyStates[myUsername]) {
@@ -418,8 +427,9 @@
         });
 
         function readyRanked() { socket.emit('readyRanked', currentRoom); }
-        function leaveRankedRoom() { 
-            socket.emit('leaveRankedLobby', currentRoom);
+        
+        function leaveWaitingRoom() { 
+            socket.emit('leaveWaitingRoom', currentRoom);
             currentRoom = null;
             resetPlayMenuUI();
         }
@@ -452,6 +462,14 @@
         socket.on('playerJoined', (players) => {
             if(document.getElementById('roomSetup').style.display === 'block') {
                 document.getElementById('customPlayerCount').innerText = players.length;
+                
+                const list = document.getElementById('customWaitingPlayers');
+                if (list) {
+                    list.innerHTML = '';
+                    players.forEach(p => {
+                        list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;"><strong>${p}</strong></li>`;
+                    });
+                }
             }
         });
 
@@ -589,7 +607,7 @@
         });
 
         function quitGame() {
-            if (confirm("Are you sure you want to quit? You will lose LP and receive a loss penalty.")) {
+            if (confirm("Are you sure you want to quit?")) {
                 socket.emit('quitMatch', currentRoom);
             }
         }
