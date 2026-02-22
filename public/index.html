@@ -15,21 +15,17 @@
         .container { width: 100%; max-width: 1100px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; position: relative; }
         .active-screen { display: flex; }
         
-        /* Auth */
         .auth-box { margin: auto; text-align: center; padding: 40px; background-color: rgba(0,0,0,0.2); border-radius: 10px; width: 80%; max-width: 400px; }
         .auth-box h1 { margin-bottom: 20px; color: var(--primary); }
         .auth-box input { display: block; width: calc(100% - 20px); box-sizing: border-box; margin: 10px auto; padding: 10px; border-radius: 5px; border: none; }
         
-        /* Buttons */
         button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         .btn-primary { background-color: var(--primary); color: white; }
         .btn-secondary { background-color: var(--secondary); color: white; }
         .btn-danger { background-color: var(--danger); color: white; }
         .btn-admin { background-color: #9c27b0; color: white; display: none; }
         button:hover { opacity: 0.8; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
         
-        /* Lobby */
         .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: #222; border-bottom: 2px solid var(--primary); flex-wrap: wrap; gap: 10px; }
         .profile-info { display: flex; align-items: center; gap: 15px; }
         .profile-text h3 { margin: 0; }
@@ -39,17 +35,14 @@
         .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto;}
         .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; }
         
-        /* Play Now Menu */
         .play-menu { display: none; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
         .play-menu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 15px; }
         
-        /* Leaderboard */
         .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; overflow: hidden;}
         .leaderboard-table th, .leaderboard-table td { padding: 10px; text-align: left; border-bottom: 1px solid #444; vertical-align: middle; }
         .leaderboard-table th { background-color: #111; color: var(--secondary); }
         .badge-cell { width: 60px; text-align: center; }
 
-        /* Chat */
         .chat-box { flex: 1; display: flex; flex-direction: column; padding: 10px; overflow: hidden; }
         .chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; font-size: 14px; word-wrap: break-word; }
         .chat-input-area { display: flex; }
@@ -57,12 +50,10 @@
         .chat-input-area button { margin: 0; border-radius: 0 5px 5px 0; }
         .msg-system { color: var(--system-msg); font-weight: bold; }
         
-        /* Loading Screen */
         #loadingScreen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(26, 26, 36, 0.95); z-index: 50; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
         .spinner { border: 6px solid #333; border-top: 6px solid var(--primary); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* Game */
         .game-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
         .board-section { flex: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .grid-6x6 { display: grid; grid-template-columns: repeat(6, 60px); grid-template-rows: repeat(6, 60px); gap: 5px; background-color: var(--grid-bg); padding: 10px; border-radius: 8px; margin-bottom: 20px; user-select: none; }
@@ -74,24 +65,20 @@
         .player-list, .found-words { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px; overflow-y: auto; flex: 1; }
         .timer { font-size: 32px; font-weight: bold; color: var(--danger); text-align: center; margin-bottom: 10px; }
         
-        /* Spectator Grid */
         .spectator-views { display: grid; grid-template-columns: 1fr; gap: 10px; }
         .spec-player { background: #222; padding: 10px; border-radius: 5px; border-left: 3px solid var(--secondary); }
         .spec-words { font-size: 12px; color: #ccc; margin-top: 5px; max-height: 80px; overflow-y: auto; }
 
-        /* Game Over Modal */
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
         .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
         .result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; }
         
-        /* Admin Panel */
         #adminPanel { display: none; position: absolute; top: 5%; left: 5%; width: 90%; height: 90%; background: #1a1a24; border: 2px solid #9c27b0; border-radius: 10px; z-index: 200; flex-direction: column; padding: 20px; box-sizing: border-box; box-shadow: 0 0 20px #9c27b0; }
         .admin-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #9c27b0; padding-bottom: 10px; margin-bottom: 15px; }
         .admin-body { display: flex; gap: 20px; flex: 1; overflow: hidden; }
         .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
         .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
 
-        /* Mobile Responsive Overhaul */
         @media (max-width: 768px) {
             body { align-items: flex-start; }
             .container { height: 100vh; border-radius: 0; }
@@ -143,18 +130,36 @@
                 <button class="btn-primary" style="font-size: 20px; padding: 15px;" onclick="togglePlayMenu()">PLAY NOW</button>
                 
                 <div id="playMenu" class="play-menu">
-                    <div class="play-menu-grid">
+                    <div id="playMenuGrid" class="play-menu-grid">
                         <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
                         <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
                         <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
                     </div>
-                    <hr style="border-color: #444; margin: 15px 0;">
-                    <h4>Active Custom Rooms</h4>
-                    <div id="roomList" style="text-align: left;"></div>
-                    <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                        <h3>Custom Room: <span id="customRoomIdText"></span></h3>
-                        <p>Players: <span id="customPlayerCount">1</span>/4</p>
-                        <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+
+                    <div id="searchingState" style="display:none; padding: 15px;">
+                        <h3 style="color: var(--secondary);">Searching for opponents...</h3>
+                        <p style="font-size: 12px; color: var(--text-muted);">(Matchmaking limited to ±200 LP)</p>
+                        <button class="btn-danger" onclick="cancelSearch()">Cancel Search</button>
+                    </div>
+
+                    <div id="rankedWaitingRoom" style="display:none; background: #222; padding: 15px; border-radius: 5px;">
+                        <h3 style="color: var(--primary);">Ranked Match Found!</h3>
+                        <ul id="rankedWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
+                        <div style="display: flex; justify-content: center; gap: 10px;">
+                            <button id="readyRankedBtn" class="btn-primary" onclick="readyRanked()">Ready Up</button>
+                            <button class="btn-danger" onclick="leaveRankedRoom()">Leave Room</button>
+                        </div>
+                    </div>
+
+                    <div id="customMenuSection">
+                        <hr style="border-color: #444; margin: 15px 0;">
+                        <h4>Active Custom Rooms</h4>
+                        <div id="roomList" style="text-align: left;"></div>
+                        <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                            <h3>Custom Room: <span id="customRoomIdText"></span></h3>
+                            <p>Players: <span id="customPlayerCount">1</span>/4</p>
+                            <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+                        </div>
                     </div>
                 </div>
 
@@ -250,7 +255,6 @@
         let myUsername = null;
         let isSpectator = false;
 
-        // BGM Handling
         const bgmMenu = document.getElementById('bgmMenu');
         const bgmGame = document.getElementById('bgmGame');
         bgmMenu.volume = 0.5;
@@ -265,12 +269,13 @@
             bgmGame.play().catch(e => console.log("Audio play blocked until interaction."));
         }
 
-        // --- Session Persistence & Auth ---
         window.onload = () => {
             const savedUser = localStorage.getItem('wpw_user');
             const savedPass = localStorage.getItem('wpw_pass');
-            if (savedUser && savedPass) {
+            if (savedUser && savedUser !== 'undefined' && savedPass) {
                 socket.emit('reconnectUser', { username: savedUser, password: savedPass });
+            } else {
+                localStorage.removeItem('wpw_user');
             }
         };
 
@@ -296,9 +301,10 @@
 
         socket.on('authSuccess', (data) => {
             myUsername = data.username;
-            // Save credentials for Session Persistence
-            localStorage.setItem('wpw_user', document.getElementById('usernameInput').value || myUsername);
-            localStorage.setItem('wpw_pass', document.getElementById('passwordInput').value || localStorage.getItem('wpw_pass'));
+            // The Fix: Never save the raw input value directly to avoid "undefined" strings.
+            localStorage.setItem('wpw_user', data.username);
+            const passInput = document.getElementById('passwordInput').value;
+            if(passInput) localStorage.setItem('wpw_pass', passInput);
             
             document.getElementById('authMessage').innerText = '';
             document.getElementById('authScreen').classList.remove('active-screen');
@@ -335,7 +341,6 @@
             document.getElementById('headerBadge').src = `assets/${data.badge}`;
         }
 
-        // --- Lobby & Chat ---
         function sendChat() {
             const input = document.getElementById('chatInput');
             if (input.value.trim()) {
@@ -366,7 +371,7 @@
             });
         });
 
-        // --- Play Now Menu ---
+        // --- Play Now / Ranked Menu ---
         function togglePlayMenu() {
             const menu = document.getElementById('playMenu');
             menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
@@ -374,9 +379,50 @@
         }
 
         function findMatch() {
+            document.getElementById('playMenuGrid').style.display = 'none';
+            document.getElementById('customMenuSection').style.display = 'none';
+            document.getElementById('searchingState').style.display = 'block';
             socket.emit('findMatch');
-            document.getElementById('playMenu').innerHTML = '<h3>Searching for players...</h3>';
         }
+        function cancelSearch() {
+            socket.emit('cancelMatch');
+            resetPlayMenuUI();
+        }
+
+        socket.on('searchingMatch', () => {
+            // Re-trigger visual searching state if dropped from a dead room
+            document.getElementById('rankedWaitingRoom').style.display = 'none';
+            document.getElementById('searchingState').style.display = 'block';
+        });
+
+        socket.on('rankedLobbyUpdate', (data) => {
+            document.getElementById('searchingState').style.display = 'none';
+            document.getElementById('playMenuGrid').style.display = 'none';
+            document.getElementById('customMenuSection').style.display = 'none';
+            document.getElementById('rankedWaitingRoom').style.display = 'block';
+            currentRoom = data.roomId;
+            
+            const list = document.getElementById('rankedWaitingPlayers');
+            list.innerHTML = '';
+            data.players.forEach(p => {
+                const status = data.readyStates[p] ? '<span style="color: var(--primary)">Ready</span>' : '<span style="color: var(--text-muted)">Waiting...</span>';
+                list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;"><strong>${p}</strong> - ${status}</li>`;
+            });
+            
+            if(data.readyStates[myUsername]) {
+                document.getElementById('readyRankedBtn').style.display = 'none';
+            } else {
+                document.getElementById('readyRankedBtn').style.display = 'inline-block';
+            }
+        });
+
+        function readyRanked() { socket.emit('readyRanked', currentRoom); }
+        function leaveRankedRoom() { 
+            socket.emit('leaveRankedLobby', currentRoom);
+            currentRoom = null;
+            resetPlayMenuUI();
+        }
+
         function startAIMatch() { socket.emit('startAIMatch'); }
         function createCustomRoom() { socket.emit('createRoom'); }
         function joinCustomRoom(roomId) { socket.emit('joinRoom', roomId); }
@@ -426,7 +472,6 @@
             document.getElementById('authScreen').classList.remove('active-screen');
             setupGameBoard(data);
             
-            // Restore previous state
             document.getElementById('myGameScore').innerText = data.myScore;
             data.myWords.forEach(w => {
                 document.getElementById('myFoundWordsList').innerHTML += `<li>${w}</li>`;
@@ -508,7 +553,6 @@
                 msg.innerText = `+${data.points} points!`;
                 msg.style.color = "var(--primary)";
                 document.getElementById('myFoundWordsList').innerHTML += `<li>${data.word} (+${data.points})</li>`;
-                // Auto scroll
                 const wordsList = document.getElementById('myScoreSection');
                 wordsList.scrollTop = wordsList.scrollHeight;
             } else {
@@ -527,7 +571,6 @@
             document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
         });
 
-        // --- Quit Penalty Logic ---
         function quitGame() {
             if (confirm("Are you sure you want to quit? You will lose LP and receive a loss penalty.")) {
                 socket.emit('quitMatch', currentRoom);
@@ -571,30 +614,22 @@
             document.getElementById('gameOverModal').style.display = 'flex';
         });
 
+        function resetPlayMenuUI() {
+            document.getElementById('searchingState').style.display = 'none';
+            document.getElementById('rankedWaitingRoom').style.display = 'none';
+            document.getElementById('playMenuGrid').style.display = 'grid';
+            document.getElementById('customMenuSection').style.display = 'block';
+            document.getElementById('roomSetup').style.display = 'none';
+        }
+
         function returnToLobby() {
             document.getElementById('gameOverModal').style.display = 'none';
             document.getElementById('gameScreen').classList.remove('active-screen');
             document.getElementById('lobbyScreen').classList.add('active-screen');
             currentRoom = null;
-            document.getElementById('roomSetup').style.display = 'none';
             
-            // Reset Play Menu explicitly for next time
+            resetPlayMenuUI();
             document.getElementById('playMenu').style.display = 'none';
-            document.getElementById('playMenu').innerHTML = `
-                <div class="play-menu-grid">
-                    <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
-                    <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
-                    <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
-                </div>
-                <hr style="border-color: #444; margin: 15px 0;">
-                <h4>Active Custom Rooms</h4>
-                <div id="roomList" style="text-align: left;"></div>
-                <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                    <h3>Custom Room: <span id="customRoomIdText"></span></h3>
-                    <p>Players: <span id="customPlayerCount">1</span>/4</p>
-                    <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
-                </div>
-            `;
             
             playMenuMusic();
             socket.emit('getLeaderboard');
@@ -639,7 +674,6 @@
             document.getElementById('lobbyScreen').classList.remove('active-screen');
             document.getElementById('gameScreen').classList.add('active-screen');
             
-            // Layout Adjustments for Spectator
             document.getElementById('gameControls').style.display = 'none';
             document.getElementById('myScoreSection').style.display = 'none';
             document.getElementById('gamePlayerList').style.display = 'none';
