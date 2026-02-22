@@ -11,8 +11,8 @@
             --text-muted: #aaa; --grid-bg: #333; --tile-bg: #e0e0e0;
             --tile-text: #111; --tile-selected: #ffc107;
         }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-light); margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .container { width: 100%; max-width: 1000px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-light); margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        .container { width: 100%; max-width: 1100px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; }
         .active-screen { display: flex; }
         
         /* Auth */
@@ -25,21 +25,27 @@
         .btn-primary { background-color: var(--primary); color: white; }
         .btn-secondary { background-color: var(--secondary); color: white; }
         .btn-danger { background-color: var(--danger); color: white; }
+        .btn-admin { background-color: #9c27b0; color: white; display: none; }
         button:hover { opacity: 0.8; }
         
         /* Lobby */
         .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: #222; border-bottom: 2px solid var(--primary); }
-        .profile-info h3 { margin: 0; }
-        .profile-info p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px; }
+        .profile-info { display: flex; align-items: center; gap: 15px; }
+        .profile-text h3 { margin: 0; }
+        .profile-text p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px; }
+        .rank-badge { width: 50px; height: 50px; object-fit: contain; }
         .lobby-content { display: flex; flex: 1; overflow: hidden; }
         .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto;}
         .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; }
         
+        /* Play Now Menu */
+        .play-menu { display: none; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+        
         /* Leaderboard */
         .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; overflow: hidden;}
-        .leaderboard-table th, .leaderboard-table td { padding: 10px; text-align: left; border-bottom: 1px solid #444; }
+        .leaderboard-table th, .leaderboard-table td { padding: 10px; text-align: left; border-bottom: 1px solid #444; vertical-align: middle; }
         .leaderboard-table th { background-color: #111; color: var(--secondary); }
-        .leaderboard-table tr:hover { background-color: rgba(255,255,255,0.05); }
+        .badge-cell { width: 60px; text-align: center; }
 
         /* Chat */
         .chat-box { flex: 1; display: flex; flex-direction: column; padding: 10px; }
@@ -60,10 +66,23 @@
         .player-list, .found-words { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px; overflow-y: auto; }
         .found-words { flex: 1; }
         .timer { font-size: 32px; font-weight: bold; color: var(--danger); text-align: center; }
-        #roomSetup { display: none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px; }
+        
+        /* Game Over Modal */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
+        .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 80%; max-width: 600px; }
+        .result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; }
+        
+        /* Admin Panel */
+        #adminPanel { display: none; position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; background: #1a1a24; border: 2px solid #9c27b0; border-radius: 10px; z-index: 200; flex-direction: column; padding: 20px; box-shadow: 0 0 20px #9c27b0; }
+        .admin-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #9c27b0; padding-bottom: 10px; margin-bottom: 15px; }
+        .admin-body { display: flex; gap: 20px; flex: 1; overflow: hidden; }
+        .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
+        .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
     </style>
 </head>
 <body>
+    <audio id="bgmMenu" src="music/menu.mp3" loop></audio>
+    <audio id="bgmGame" src="music/gameplay.mp3" loop></audio>
 
     <div id="authScreen" class="container active-screen">
         <div class="auth-box">
@@ -79,55 +98,47 @@
     <div id="lobbyScreen" class="container">
         <div class="header">
             <div class="profile-info">
-                <h3 id="profileName">Player</h3>
-                <p>Rank: <span id="profileRank" style="color:var(--primary); font-weight:bold;">-</span> | LP: <span id="profileLP">0</span></p>
+                <img id="headerBadge" class="rank-badge" src="assets/e.png" alt="Rank Badge">
+                <div class="profile-text">
+                    <h3 id="profileUsername">Player</h3>
+                    <p><span id="profileRank">Novice Scribe</span> | LP: <span id="profileLp">0</span></p>
+                </div>
             </div>
-            <button class="btn-danger" onclick="logout()">Logout</button>
+            <div>
+                <button id="adminBtn" class="btn-admin" onclick="openAdminPanel()">Admin Panel</button>
+                <button class="btn-danger" onclick="logout()">Logout</button>
+            </div>
         </div>
+        
         <div class="lobby-content">
             <div class="left-panel">
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn-primary" style="flex: 1; padding: 15px; font-size: 16px;" onclick="findMatch()">Find Ranked Match</button>
-                    <button class="btn-secondary" style="flex: 1; padding: 15px; font-size: 16px;" onclick="createRoom()">Create Custom Room</button>
-                </div>
+                <button class="btn-primary" style="font-size: 20px; padding: 15px;" onclick="togglePlayMenu()">PLAY NOW</button>
                 
-                <div id="roomSetup">
-                    <h3>Custom Room</h3>
-                    <p>Room Code: <strong id="displayRoomId"></strong></p>
-                    <ul id="roomPlayersList"></ul>
-                    <button class="btn-primary" onclick="startCustomGame()">Start Game Now</button>
+                <div id="playMenu" class="play-menu">
+                    <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
+                    <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                    <hr style="border-color: #444; margin: 15px 0;">
+                    <h4>Active Custom Rooms</h4>
+                    <div id="roomList" style="text-align: left;"></div>
+                    <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                        <h3>Custom Room: <span id="customRoomIdText"></span></h3>
+                        <p>Players: <span id="customPlayerCount">1</span>/4</p>
+                        <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+                    </div>
                 </div>
 
-                <div style="display: flex; gap: 10px;">
-                    <input type="text" id="joinRoomId" placeholder="Enter Room Code" style="flex: 2; padding: 10px;" />
-                    <button class="btn-secondary" style="flex: 1;" onclick="joinRoom()">Join Room</button>
-                </div>
-                
-                <p id="lobbyMessage" style="color: var(--secondary); font-weight: bold; margin: 0;"></p>
-
-                <div style="margin-top: 10px;">
-                    <h3>World Ranking Board</h3>
-                    <table class="leaderboard-table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Player</th>
-                                <th>Rank</th>
-                                <th>LP</th>
-                            </tr>
-                        </thead>
-                        <tbody id="leaderboardBody">
-                            </tbody>
-                    </table>
-                </div>
+                <h2>World Ranking</h2>
+                <table class="leaderboard-table">
+                    <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th></tr></thead>
+                    <tbody id="leaderboardBody"></tbody>
+                </table>
             </div>
             
             <div class="right-panel">
-                <h3 style="padding: 10px 10px 0;">Global Chat</h3>
                 <div class="chat-box">
-                    <div class="chat-messages" id="globalChat"></div>
+                    <div class="chat-messages" id="chatMessages"></div>
                     <div class="chat-input-area">
-                        <input type="text" id="chatInput" placeholder="Type..." onkeypress="if(event.key==='Enter') sendChat()">
+                        <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="handleChatEnter(event)">
                         <button class="btn-primary" onclick="sendChat()">Send</button>
                     </div>
                 </div>
@@ -136,29 +147,57 @@
     </div>
 
     <div id="gameScreen" class="container">
-        <div class="header">
-            <h3>Word Per Word - Live Match</h3>
-            <div class="timer" id="gameTimer">02:00</div>
-        </div>
         <div class="game-layout">
             <div class="board-section">
+                <div class="timer" id="gameTimer">2:00</div>
                 <div class="grid-6x6" id="gameBoard"></div>
                 <div class="word-builder">
-                    <button class="btn-secondary" onclick="clearSelection()">Clear</button>
                     <div class="current-word" id="currentWordDisplay"></div>
                     <button class="btn-primary" onclick="submitWord()">Submit</button>
+                    <button class="btn-secondary" onclick="clearWord()">Clear</button>
                 </div>
-                <p id="wordFeedback" style="color: var(--secondary); font-weight: bold; margin-top: 10px;"></p>
+                <p id="wordMessage" style="margin-top: 10px; font-weight: bold;"></p>
             </div>
+            
             <div class="side-section">
                 <div class="player-list">
-                    <h4>Live Scores</h4>
-                    <div id="playerScores"></div>
+                    <h3>Opponents</h3>
+                    <ul id="gamePlayerList" style="list-style: none; padding: 0;"></ul>
                 </div>
                 <div class="found-words">
-                    <h4>Your Words</h4>
-                    <ul id="wordList"></ul>
+                    <h3>My Score: <span id="myGameScore">0</span></h3>
+                    <ul id="myFoundWordsList" style="list-style: none; padding: 0; color: var(--secondary);"></ul>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameOverModal" class="modal">
+        <div class="modal-content">
+            <h1 style="color: var(--primary);">Time's Up!</h1>
+            <h2>Final Results</h2>
+            <div id="gameOverResults" style="margin-top: 20px; text-align: left;"></div>
+            <button class="btn-primary" style="margin-top: 20px;" onclick="returnToLobby()">Return to Lobby</button>
+        </div>
+    </div>
+
+    <div id="adminPanel">
+        <div class="admin-header">
+            <h2>Admin Control Panel (Kei)</h2>
+            <button class="btn-danger" onclick="closeAdminPanel()">Close X</button>
+        </div>
+        <div style="margin-bottom: 15px; display: flex;">
+            <input type="text" id="adminBroadcastInput" placeholder="System Broadcast Message..." style="flex: 1; padding: 10px;">
+            <button class="btn-secondary" onclick="adminBroadcast()">Broadcast</button>
+        </div>
+        <div class="admin-body">
+            <div class="admin-col">
+                <h3>Online Users</h3>
+                <div id="adminUserList"></div>
+            </div>
+            <div class="admin-col">
+                <h3>Active Matches</h3>
+                <div id="adminRoomList"></div>
             </div>
         </div>
     </div>
@@ -166,216 +205,302 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        let myUsername = "";
-        let currentRoomId = "";
-        let selectedPath = [];
-        let currentWord = "";
+        let currentRoom = null;
+        let myUsername = null;
 
-        // --- Auth Logic ---
+        // BGM Handling
+        const bgmMenu = document.getElementById('bgmMenu');
+        const bgmGame = document.getElementById('bgmGame');
+        bgmMenu.volume = 0.5;
+        bgmGame.volume = 0.5;
+
+        function playMenuMusic() {
+            bgmGame.pause(); bgmGame.currentTime = 0;
+            bgmMenu.play().catch(e => console.log("Audio play blocked until interaction."));
+        }
+        function playGameMusic() {
+            bgmMenu.pause(); bgmMenu.currentTime = 0;
+            bgmGame.play().catch(e => console.log("Audio play blocked until interaction."));
+        }
+
+        // --- Auth ---
         function register() {
-            const u = document.getElementById('usernameInput').value.trim();
-            const p = document.getElementById('passwordInput').value.trim();
-            if(u && p) socket.emit('register', { username: u, password: p });
+            const u = document.getElementById('usernameInput').value;
+            const p = document.getElementById('passwordInput').value;
+            if(u && p) socket.emit('register', {username: u, password: p});
         }
         function login() {
-            const u = document.getElementById('usernameInput').value.trim();
-            const p = document.getElementById('passwordInput').value.trim();
-            if(u && p) socket.emit('login', { username: u, password: p });
+            const u = document.getElementById('usernameInput').value;
+            const p = document.getElementById('passwordInput').value;
+            if(u && p) socket.emit('login', {username: u, password: p});
         }
         function logout() {
             socket.emit('logout');
-            showScreen('authScreen');
+            myUsername = null;
+            document.getElementById('authScreen').classList.add('active-screen');
+            document.getElementById('lobbyScreen').classList.remove('active-screen');
+            bgmMenu.pause();
         }
 
         socket.on('authSuccess', (data) => {
             myUsername = data.username;
-            document.getElementById('profileName').innerText = data.username;
-            document.getElementById('profileLP').innerText = data.lp;
+            document.getElementById('authMessage').innerText = '';
+            document.getElementById('authScreen').classList.remove('active-screen');
+            document.getElementById('lobbyScreen').classList.add('active-screen');
+            
+            document.getElementById('profileUsername').innerText = data.username;
             document.getElementById('profileRank').innerText = data.rank;
-            document.getElementById('authMessage').innerText = "";
-            showScreen('lobbyScreen');
-            socket.emit('getLeaderboard'); // Fetch leaderboard on login
+            document.getElementById('profileLp').innerText = data.lp;
+            document.getElementById('headerBadge').src = `assets/${data.badge}`;
+            
+            if (myUsername === 'Kei') document.getElementById('adminBtn').style.display = 'inline-block';
+            else document.getElementById('adminBtn').style.display = 'none';
+
+            playMenuMusic();
+            socket.emit('getLeaderboard');
+            socket.emit('getRoomList');
         });
+
         socket.on('authError', (msg) => document.getElementById('authMessage').innerText = msg);
+        socket.on('adminKicked', () => { alert("You have been kicked by the Admin."); window.location.reload(); });
+        socket.on('serverBroadcast', (msg) => { alert("SERVER BROADCAST: " + msg); });
 
-        // --- Leaderboard Logic ---
-        socket.on('updateLeaderboard', (topPlayers) => {
-            const tbody = document.getElementById('leaderboardBody');
-            tbody.innerHTML = "";
-            topPlayers.forEach((player, index) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${index + 1}</td>
-                    <td style="font-weight: bold; color: ${player.username === myUsername ? 'var(--primary)' : 'inherit'};">${player.username}</td>
-                    <td>${player.rank}</td>
-                    <td>${player.lp}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        });
-
-        // --- Chat Logic ---
+        // --- Lobby & Chat ---
         function sendChat() {
             const input = document.getElementById('chatInput');
-            if(input.value.trim()) {
+            if (input.value.trim()) {
                 socket.emit('sendChat', input.value.trim());
-                input.value = "";
+                input.value = '';
             }
         }
+        function handleChatEnter(e) { if(e.key === 'Enter') sendChat(); }
+        
         socket.on('receiveChat', (data) => {
-            const chat = document.getElementById('globalChat');
-            chat.innerHTML += `<div><strong>${data.username} [${data.rank}]:</strong> ${data.message}</div>`;
-            chat.scrollTop = chat.scrollHeight;
+            const box = document.getElementById('chatMessages');
+            box.innerHTML += `<div><strong>[${data.rank}] ${data.username}:</strong> ${data.message}</div>`;
+            box.scrollTop = box.scrollHeight;
         });
 
-        // --- Room/Matchmaking Logic ---
-        function findMatch() {
-            document.getElementById('lobbyMessage').innerText = "Searching for ranked match...";
-            socket.emit('findMatch');
-        }
-        function createRoom() {
-            socket.emit('createRoom');
-        }
-        function joinRoom() {
-            const code = document.getElementById('joinRoomId').value.trim();
-            if(code) socket.emit('joinRoom', code);
-        }
-        function startCustomGame() {
-            if(currentRoomId) socket.emit('startCustomGame', currentRoomId);
-        }
-
-        socket.on('roomCreated', (roomId) => {
-            currentRoomId = roomId;
-            document.getElementById('roomSetup').style.display = 'block';
-            document.getElementById('displayRoomId').innerText = roomId;
-            document.getElementById('roomPlayersList').innerHTML = `<li>${myUsername}</li>`;
-        });
-        socket.on('playerJoined', (players) => {
-            document.getElementById('roomSetup').style.display = 'block';
-            const list = document.getElementById('roomPlayersList');
-            list.innerHTML = "";
-            players.forEach(p => list.innerHTML += `<li>${p}</li>`);
-        });
-        socket.on('roomError', (msg) => document.getElementById('lobbyMessage').innerText = msg);
-
-        // --- Game Logic ---
-        socket.on('gameStart', (data) => {
-            currentRoomId = data.roomId;
-            showScreen('gameScreen');
-            buildBoard(data.board);
-            document.getElementById('wordList').innerHTML = "";
-            document.getElementById('wordFeedback').innerText = "";
-            clearSelection();
-            
-            const scoresDiv = document.getElementById('playerScores');
-            scoresDiv.innerHTML = "";
-            data.players.forEach(p => {
-                scoresDiv.innerHTML += `<div id="score_${p}">${p}: 0</div>`;
+        socket.on('updateLeaderboard', (players) => {
+            const tbody = document.getElementById('leaderboardBody');
+            tbody.innerHTML = '';
+            players.forEach(p => {
+                tbody.innerHTML += `<tr>
+                    <td class="badge-cell"><img class="rank-badge" src="assets/${p.badge}" alt="Badge"></td>
+                    <td><strong>${p.username}</strong></td>
+                    <td>${p.rank}</td>
+                    <td>${p.lp}</td>
+                </tr>`;
             });
         });
 
-        socket.on('timeUpdate', (time) => {
-            let m = Math.floor(time / 60);
-            let s = time % 60;
-            document.getElementById('gameTimer').innerText = `0${m}:${s < 10 ? '0' : ''}${s}`;
+        // --- Play Now Menu ---
+        function togglePlayMenu() {
+            const menu = document.getElementById('playMenu');
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+            if (menu.style.display === 'block') socket.emit('getRoomList');
+        }
+
+        function findMatch() {
+            socket.emit('findMatch');
+            document.getElementById('playMenu').innerHTML = '<h3>Searching for players...</h3>';
+        }
+        function createCustomRoom() { socket.emit('createRoom'); }
+        function joinCustomRoom(roomId) { socket.emit('joinRoom', roomId); }
+        function startCustomGame() { if(currentRoom) socket.emit('startCustomGame', currentRoom); }
+
+        socket.on('roomCreated', (roomId) => {
+            currentRoom = roomId;
+            document.getElementById('roomSetup').style.display = 'block';
+            document.getElementById('customRoomIdText').innerText = roomId;
         });
 
-        socket.on('scoreUpdate', (scores) => {
-            for (const [player, score] of Object.entries(scores)) {
-                const el = document.getElementById(`score_${player}`);
-                if (el) el.innerText = `${player}: ${score}`;
+        socket.on('playerJoined', (players) => {
+            if(document.getElementById('roomSetup').style.display === 'block') {
+                document.getElementById('customPlayerCount').innerText = players.length;
             }
         });
 
-        socket.on('wordResult', (res) => {
-            const feedback = document.getElementById('wordFeedback');
-            if(res.success) {
-                feedback.style.color = "var(--primary)";
-                feedback.innerText = `Word Accepted! +${res.points} pts`;
-                document.getElementById('wordList').innerHTML = `<li>${res.word} (${res.points} pts)</li>` + document.getElementById('wordList').innerHTML;
-            } else {
-                feedback.style.color = "var(--danger)";
-                feedback.innerText = res.message;
-            }
-            clearSelection();
+        socket.on('roomListUpdate', (rooms) => {
+            const list = document.getElementById('roomList');
+            list.innerHTML = rooms.length === 0 ? '<p>No open custom rooms.</p>' : '';
+            rooms.forEach(r => {
+                list.innerHTML += `<div style="display:flex; justify-content:space-between; margin-bottom:5px; background: #333; padding: 10px; border-radius: 5px;">
+                    <span>Room: ${r.id} (${r.players}/4)</span>
+                    <button class="btn-secondary" onclick="joinCustomRoom('${r.id}')">Join</button>
+                </div>`;
+            });
         });
 
-        socket.on('gameOver', (data) => {
-            const me = data.results[myUsername];
-            let msg = `Game Over!\n\nWinners: ${data.winners.join(', ')}\n\nYour Score: ${me.score}\nNew LP: ${me.newLp}\nNew Rank: ${me.rank}`;
-            alert(msg);
-            
-            // Update Lobby UI
-            document.getElementById('profileLP').innerText = me.newLp;
-            document.getElementById('profileRank').innerText = me.rank;
-            document.getElementById('roomSetup').style.display = 'none';
-            document.getElementById('lobbyMessage').innerText = "";
-            currentRoomId = "";
-            showScreen('lobbyScreen');
-            
-            // Refresh Leaderboard
-            socket.emit('getLeaderboard');
-        });
+        // --- Gameplay ---
+        let selectedTiles = [];
+        let currentWordStr = "";
 
-        // --- Board Interaction ---
-        function buildBoard(boardString) {
-            const board = document.getElementById('gameBoard');
-            board.innerHTML = "";
-            for(let i = 0; i < 36; i++) {
+        socket.on('gameStart', (data) => {
+            currentRoom = data.roomId;
+            document.getElementById('lobbyScreen').classList.remove('active-screen');
+            document.getElementById('gameScreen').classList.add('active-screen');
+            document.getElementById('playMenu').style.display = 'none';
+            playGameMusic();
+            
+            // Build Board
+            const boardDiv = document.getElementById('gameBoard');
+            boardDiv.innerHTML = '';
+            for (let i = 0; i < 36; i++) {
                 const tile = document.createElement('div');
                 tile.className = 'tile';
-                tile.innerText = boardString[i];
-                tile.onclick = () => handleTileClick(i, boardString[i], tile);
-                board.appendChild(tile);
+                tile.innerText = data.board[i];
+                tile.dataset.index = i;
+                tile.onclick = () => selectTile(tile);
+                boardDiv.appendChild(tile);
             }
-        }
 
-        function handleTileClick(index, letter, tileEl) {
-            if (selectedPath.some(step => step.index === index)) {
-                if (selectedPath[selectedPath.length - 1].index === index) {
-                    selectedPath.pop();
-                    tileEl.classList.remove('selected');
-                    updateWord();
+            // Hide opponent scores, just show names
+            const pList = document.getElementById('gamePlayerList');
+            pList.innerHTML = '';
+            data.players.forEach(p => {
+                if(p !== myUsername) {
+                    pList.innerHTML += `<li id="opp_${p}"><strong>${p}</strong>: <span style="color:#aaa; font-style:italic;">Playing...</span></li>`;
                 }
-                return;
-            }
-            if (selectedPath.length > 0) {
-                const lastIdx = selectedPath[selectedPath.length - 1].index;
-                const r1 = Math.floor(lastIdx / 6), c1 = lastIdx % 6;
-                const r2 = Math.floor(index / 6), c2 = index % 6;
-                if (Math.abs(r1 - r2) > 1 || Math.abs(c1 - c2) > 1) return; // Must be adjacent
-            }
-            selectedPath.push({ index, letter });
-            tileEl.classList.add('selected');
-            updateWord();
+            });
+
+            document.getElementById('myGameScore').innerText = '0';
+            document.getElementById('myFoundWordsList').innerHTML = '';
+            clearWord();
+        });
+
+        function selectTile(tile) {
+            if (tile.classList.contains('selected')) return;
+            tile.classList.add('selected');
+            selectedTiles.push(tile);
+            currentWordStr += tile.innerText;
+            document.getElementById('currentWordDisplay').innerText = currentWordStr;
         }
 
-        function updateWord() {
-            currentWord = selectedPath.map(s => s.letter).join('');
-            document.getElementById('currentWordDisplay').innerText = currentWord;
-        }
-
-        function clearSelection() {
-            selectedPath = [];
-            currentWord = "";
-            document.querySelectorAll('.tile').forEach(t => t.classList.remove('selected'));
-            updateWord();
+        function clearWord() {
+            selectedTiles.forEach(t => t.classList.remove('selected'));
+            selectedTiles = [];
+            currentWordStr = "";
+            document.getElementById('currentWordDisplay').innerText = "";
+            document.getElementById('wordMessage').innerText = "";
         }
 
         function submitWord() {
-            if (currentWord.length >= 3) {
-                socket.emit('submitWord', { roomId: currentRoomId, word: currentWord });
+            if (currentWordStr.length >= 3) {
+                socket.emit('submitWord', { roomId: currentRoom, word: currentWordStr });
             } else {
-                document.getElementById('wordFeedback').innerText = "Word must be 3+ letters.";
-                document.getElementById('wordFeedback').style.color = "var(--danger)";
-                clearSelection();
+                document.getElementById('wordMessage').innerText = "Word too short!";
+                document.getElementById('wordMessage').style.color = "var(--danger)";
             }
+            clearWord();
         }
 
-        function showScreen(id) {
-            document.querySelectorAll('.container').forEach(el => el.classList.remove('active-screen'));
-            document.getElementById(id).classList.add('active-screen');
+        socket.on('wordResult', (data) => {
+            const msg = document.getElementById('wordMessage');
+            if (data.success) {
+                msg.innerText = `+${data.points} points!`;
+                msg.style.color = "var(--primary)";
+                document.getElementById('myFoundWordsList').innerHTML += `<li>${data.word} (+${data.points})</li>`;
+            } else {
+                msg.innerText = "Invalid or already found.";
+                msg.style.color = "var(--danger)";
+            }
+        });
+
+        // Only updates YOUR score visually
+        socket.on('myScoreUpdate', (newScore) => {
+            document.getElementById('myGameScore').innerText = newScore;
+        });
+
+        socket.on('timeUpdate', (time) => {
+            const mins = Math.floor(time / 60);
+            const secs = time % 60;
+            document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        });
+
+        // --- Game Over ---
+        socket.on('gameOver', (data) => {
+            const resultsDiv = document.getElementById('gameOverResults');
+            resultsDiv.innerHTML = '';
+            
+            data.sortedPlayers.forEach((p, index) => {
+                const res = data.results[p];
+                const lpColor = res.lpChange > 0 ? 'var(--primary)' : (res.lpChange < 0 ? 'var(--danger)' : '#aaa');
+                const lpSign = res.lpChange > 0 ? '+' : '';
+                
+                resultsDiv.innerHTML += `
+                <div class="result-row">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:20px; font-weight:bold;">#${index + 1}</span>
+                        <img src="assets/${res.badge}" style="width:40px; height:40px; object-fit:contain;">
+                        <span><strong>${p}</strong> <br> <span style="font-size:12px; color:#aaa;">${res.rank}</span></span>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="font-size:18px; font-weight:bold;">${res.score} pts</span><br>
+                        <span style="color:${lpColor}; font-weight:bold;">${lpSign}${res.lpChange} LP</span>
+                    </div>
+                </div>`;
+                
+                // Update local profile if it's you
+                if (p === myUsername) {
+                    document.getElementById('profileRank').innerText = res.rank;
+                    document.getElementById('profileLp').innerText = res.newLp;
+                    document.getElementById('headerBadge').src = `assets/${res.badge}`;
+                }
+            });
+
+            document.getElementById('gameOverModal').style.display = 'flex';
+        });
+
+        function returnToLobby() {
+            document.getElementById('gameOverModal').style.display = 'none';
+            document.getElementById('gameScreen').classList.remove('active-screen');
+            document.getElementById('lobbyScreen').classList.add('active-screen');
+            currentRoom = null;
+            document.getElementById('roomSetup').style.display = 'none';
+            
+            playMenuMusic();
+            socket.emit('getLeaderboard');
         }
+
+        // --- Admin Panel ---
+        function openAdminPanel() {
+            document.getElementById('adminPanel').style.display = 'flex';
+            socket.emit('requestAdminData');
+        }
+        function closeAdminPanel() {
+            document.getElementById('adminPanel').style.display = 'none';
+        }
+        function adminBroadcast() {
+            const msg = document.getElementById('adminBroadcastInput').value;
+            if(msg) { socket.emit('adminBroadcast', msg); document.getElementById('adminBroadcastInput').value = ''; }
+        }
+        function adminKick(user) { socket.emit('adminKick', user); }
+        function adminSpectate(roomId) { socket.emit('adminSpectate', roomId); closeAdminPanel(); }
+
+        socket.on('adminDataUpdate', (data) => {
+            if (myUsername !== 'Kei') return;
+            const uList = document.getElementById('adminUserList');
+            uList.innerHTML = '';
+            data.users.forEach(u => {
+                uList.innerHTML += `<div class="admin-item"><span>${u}</span> <button class="btn-danger" style="padding:5px;" onclick="adminKick('${u}')">Kick</button></div>`;
+            });
+
+            const rList = document.getElementById('adminRoomList');
+            rList.innerHTML = '';
+            data.rooms.forEach(r => {
+                rList.innerHTML += `<div class="admin-item">
+                    <span style="font-size:12px;">${r.id}<br>${r.players.join(', ')}<br>Time: ${r.time}s</span> 
+                    <button class="btn-secondary" style="padding:5px;" onclick="adminSpectate('${r.id}')">Spectate</button>
+                </div>`;
+            });
+        });
+
+        socket.on('spectateStart', (data) => {
+            // Basic hook to view a board as Admin (can be expanded later)
+            alert("Spectating Room: " + data.roomId + "\nPlayers: " + data.players.join(', '));
+        });
+
     </script>
 </body>
 </html>
