@@ -1,26 +1,15 @@
 {
-  "name": "solo-leveling-board-game",
+  "name": "wordperword",
   "version": "1.0.0",
-  "description": "A multiplayer strategy game based on the Hunter ranking system.",
+  "description": "6x6 PvP Word Factory Game",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [
-    "multiplayer",
-    "socket.io",
-    "supabase",
-    "solo-leveling"
-  ],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.7",
     "express": "^4.18.2",
-    "socket.io": "^4.7.4"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "socket.io": "^4.7.2",
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.4.1"
   }
 }
