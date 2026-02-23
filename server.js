@@ -209,7 +209,7 @@ io.on('connection', (socket) => {
             if (activeRoom) {
                 socket.emit('rejoinGame', {
                     roomId: activeRoom.id, board: activeRoom.board, players: activeRoom.players, time: activeRoom.time,
-                    myScore: activeRoom.scores[currentUser], myWords: activeRoom.words[currentUser]
+                    myScore: activeRoom.words[currentUser].length, myWords: activeRoom.words[currentUser]
                 });
             } else {
                 socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge });
@@ -492,10 +492,8 @@ io.on('connection', (socket) => {
                 if (!rooms[roomId]) return clearInterval(interval);
                 const randomWord = allWords[Math.floor(Math.random() * allWords.length)];
                 if (randomWord.length >= 3 && randomWord.length <= 5 && !room.words[ai].includes(randomWord)) {
-                    const points = getWordScore(randomWord.length);
-                    room.scores[ai] += points;
                     room.words[ai].push(randomWord);
-                    io.to(roomId).emit('spectatorUpdate', { player: ai, points: points });
+                    io.to(roomId).emit('spectatorUpdate', { player: ai, points: 1 }); // Just emits word count increment
                 }
             }, 5000 + Math.random() * 6000); 
             room.aiIntervals.push(interval);
@@ -512,13 +510,12 @@ io.on('connection', (socket) => {
             return socket.emit('wordResult', { success: false });
         }
 
-        const points = getWordScore(cleanWord.length);
-        room.scores[currentUser] += points;
+        // Score is NO LONGER calculated here!
         room.words[currentUser].push(cleanWord);
 
-        socket.emit('wordResult', { success: true, word: cleanWord, points: points });
-        socket.emit('myScoreUpdate', room.scores[currentUser]); 
-        io.to(roomId).emit('spectatorUpdate', { player: currentUser, points: points });
+        socket.emit('wordResult', { success: true, word: cleanWord });
+        socket.emit('myScoreUpdate', room.words[currentUser].length); // Transmits word count instead of score
+        io.to(roomId).emit('spectatorUpdate', { player: currentUser, points: 1 });
     });
 
     socket.on('quitMatch', async (roomId) => {
@@ -557,6 +554,37 @@ io.on('connection', (socket) => {
 
         if (room.isAI) room.aiIntervals.forEach(clearInterval);
 
+        // --- NEW DUPLICATE ELIMINATION & SCORING LOGIC ---
+        const wordFreq = {};
+        const allPlayers = room.players;
+        
+        // Count frequencies of all valid words across all players
+        allPlayers.forEach(p => {
+            if (room.scores[p] !== -9999) { // Ignore words from players who quit
+                room.words[p].forEach(w => {
+                    wordFreq[w] = (wordFreq[w] || 0) + 1;
+                });
+            }
+        });
+
+        // Evaluate unique words and set final scores
+        room.detailedWords = {};
+        allPlayers.forEach(p => {
+            if (room.scores[p] === -9999) return;
+            
+            let finalScore = 0;
+            const detailedWords = [];
+            room.words[p].forEach(w => {
+                const isUnique = wordFreq[w] === 1;
+                const pts = isUnique ? getWordScore(w.length) : 0;
+                finalScore += pts;
+                detailedWords.push({ word: w, isUnique: isUnique, points: pts });
+            });
+            room.scores[p] = finalScore;
+            room.detailedWords[p] = detailedWords;
+        });
+
+        // Now sort based on the new computed scores
         const sortedPlayers = Object.keys(room.scores).sort((a, b) => room.scores[b] - room.scores[a]);
         const lpResults = {};
 
@@ -626,7 +654,15 @@ io.on('connection', (socket) => {
 
         for (const player of sortedPlayers) {
             if (player.startsWith('AI_')) {
-                lpResults[player] = { username: player, score: room.scores[player], words: room.words[player] || [], lpChange: 0, newLp: 0, rank: "AI Engine", badge: "e.png" };
+                lpResults[player] = { 
+                    username: player, 
+                    score: room.scores[player], 
+                    detailedWords: room.detailedWords[player] || [], 
+                    lpChange: 0, 
+                    newLp: 0, 
+                    rank: "AI Engine", 
+                    badge: "e.png" 
+                };
                 continue;
             }
 
@@ -638,7 +674,8 @@ io.on('connection', (socket) => {
                 if (!isConnected || hasForfeited) {
                     lpChange = 0; 
                 } else {
-                    lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
+                    // Update AI LP to divide by 5
+                    lpChange = room.scores[player] >= 5 ? Math.floor(room.scores[player] / 5) : 0;
                 }
             } else {
                 lpChange = lpAssignments[player];
@@ -661,7 +698,7 @@ io.on('connection', (socket) => {
             lpResults[player] = { 
                 username: player,
                 score: hasForfeited ? 0 : room.scores[player], 
-                words: room.words[player] || [], 
+                detailedWords: room.detailedWords[player] || [], 
                 lpChange: lpChange, 
                 newLp: newLp, 
                 rank: rankData.rank, 
@@ -688,12 +725,6 @@ io.on('connection', (socket) => {
         if (targetSocketId) {
             io.to(targetSocketId).emit('adminKicked');
             io.sockets.sockets.get(targetSocketId)?.disconnect();
-        }
-    });
-
-    socket.on('adminBroadcast', (msg) => {
-        if (currentUser === 'Kei') {
-            io.emit('receiveChat', { username: 'SYSTEM', rank: 'Admin', message: msg });
         }
     });
 
