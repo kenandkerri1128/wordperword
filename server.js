@@ -84,11 +84,7 @@ function getRankData(lp) {
 
 function getWordScore(wordLength) {
     if (wordLength < 3) return 0;
-    if (wordLength === 3 || wordLength === 4) return 1;
-    if (wordLength === 5) return 2;
-    if (wordLength === 6) return 3;
-    if (wordLength === 7) return 5;
-    return 11;
+    return wordLength - 2;
 }
 
 function generateBoard() {
@@ -140,7 +136,7 @@ async function getPlayerWorldRank(username, lp) {
 }
 
 function broadcastRoomList() {
-    const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 4).map(id => ({
+    const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 8).map(id => ({
         id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
     }));
     io.emit('roomListUpdate', availableRooms);
@@ -436,7 +432,7 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', (data) => {
         const { roomId, password } = data;
-        if (!currentUser || !rooms[roomId] || rooms[roomId].players.length >= 4) {
+        if (!currentUser || !rooms[roomId] || rooms[roomId].players.length >= 8) {
             return socket.emit('roomError', 'Room unavailable.');
         }
         if (rooms[roomId].password && rooms[roomId].password !== password) {
@@ -510,7 +506,6 @@ io.on('connection', (socket) => {
             return socket.emit('wordResult', { success: false });
         }
 
-        // Score is NO LONGER calculated here!
         room.words[currentUser].push(cleanWord);
 
         socket.emit('wordResult', { success: true, word: cleanWord });
@@ -554,7 +549,6 @@ io.on('connection', (socket) => {
 
         if (room.isAI) room.aiIntervals.forEach(clearInterval);
 
-        // --- NEW DUPLICATE ELIMINATION & SCORING LOGIC ---
         const wordFreq = {};
         const allPlayers = room.players;
         
@@ -674,7 +668,6 @@ io.on('connection', (socket) => {
                 if (!isConnected || hasForfeited) {
                     lpChange = 0; 
                 } else {
-                    // Update AI LP to divide by 5
                     lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
                 }
             } else {
@@ -752,4 +745,3 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
