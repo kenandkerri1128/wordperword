@@ -233,12 +233,6 @@ io.on('connection', (socket) => {
         sendAdminUpdate();
     });
 
-    socket.on('sendChat', async (message) => {
-        if (!currentUser) return;
-        const { data: user } = await supabase.from('Wordiers').select('rank').eq('username', currentUser).single();
-        io.emit('receiveChat', { username: currentUser, rank: user ? user.rank : "Unknown", message });
-    });
-
     socket.on('getLeaderboard', async () => {
         const { data: topPlayers } = await supabase.from('Wordiers').select('username, lp, rank, wins, losses').order('lp', { ascending: false }).limit(10);
         if (topPlayers) {
