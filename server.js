@@ -125,7 +125,7 @@ io.on('connection', (socket) => {
         if (existingUser) return socket.emit('authError', 'Username already exists.');
 
         const initialRankData = getRankData(0);
-        const { error } = await supabase.from('Wordiers').insert([{ username: data.username, password: data.password, lp: 0, rank: initialRankData.rank }]);
+        const { error } = await supabase.from('Wordiers').insert([{ username: data.username, password: data.password, lp: 0, rank: initialRankData.rank, wins: 0, losses: 0 }]);
         
         if (error) socket.emit('authError', 'Database error.');
         else {
@@ -210,7 +210,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('getLeaderboard', async () => {
-        const { data: topPlayers } = await supabase.from('Wordiers').select('username, lp, rank').order('lp', { ascending: false }).limit(10);
+        const { data: topPlayers } = await supabase.from('Wordiers').select('username, lp, rank, wins, losses').order('lp', { ascending: false }).limit(10);
         if (topPlayers) {
             const mappedPlayers = topPlayers.map(p => ({ ...p, badge: getRankData(p.lp).badge }));
             socket.emit('updateLeaderboard', mappedPlayers);
@@ -430,7 +430,6 @@ io.on('connection', (socket) => {
 
     socket.on('startCustomGame', (roomId) => {
         if (rooms[roomId] && rooms[roomId].host === currentUser) {
-            // STRICT 2-PLAYER MINIMUM FIX
             if (rooms[roomId].players.length >= 2) {
                 beginGameSequence(roomId);
             } else {
@@ -472,7 +471,7 @@ io.on('connection', (socket) => {
                     const points = getWordScore(randomWord.length);
                     room.scores[ai] += points;
                     room.words[ai].push(randomWord);
-                    io.to(roomId).emit('spectatorUpdate', { player: ai, word: randomWord, points: points });
+                    io.to(roomId).emit('spectatorUpdate', { player: ai, points: points });
                 }
             }, 5000 + Math.random() * 6000); 
             room.aiIntervals.push(interval);
@@ -495,7 +494,7 @@ io.on('connection', (socket) => {
 
         socket.emit('wordResult', { success: true, word: cleanWord, points: points });
         socket.emit('myScoreUpdate', room.scores[currentUser]); 
-        io.to(roomId).emit('spectatorUpdate', { player: currentUser, word: cleanWord, points: points });
+        io.to(roomId).emit('spectatorUpdate', { player: currentUser, points: points });
     });
 
     socket.on('quitMatch', async (roomId) => {
@@ -505,11 +504,12 @@ io.on('connection', (socket) => {
         socket.leave(roomId);
         
         const lpChange = room.isAI ? 0 : -20;
-        const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', currentUser).single();
+        const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', currentUser).single();
         let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
+        let newLosses = (userData ? userData.losses : 0) + (room.isAI ? 0 : 1);
         const rankData = getRankData(newLp);
         
-        await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank }).eq('username', currentUser);
+        await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank, losses: newLosses }).eq('username', currentUser);
         socket.emit('quitSuccess', { lp: newLp, rank: rankData.rank, badge: rankData.badge, penalty: lpChange });
     });
 
@@ -538,7 +538,7 @@ io.on('connection', (socket) => {
 
         for (const player of sortedPlayers) {
             if (player.startsWith('AI_')) {
-                lpResults[player] = { score: room.scores[player], words: room.words[player] || [], lpChange: 0, newLp: 0, rank: "AI Engine", badge: "e.png" };
+                lpResults[player] = { username: player, score: room.scores[player], words: room.words[player] || [], lpChange: 0, newLp: 0, rank: "AI Engine", badge: "e.png" };
                 continue;
             }
 
@@ -574,15 +574,22 @@ io.on('connection', (socket) => {
                 }
             }
 
-            const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', player).single();
+            const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', player).single();
             let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
+            let newWins = userData && userData.wins ? userData.wins : 0;
+            let newLosses = userData && userData.losses ? userData.losses : 0;
             const rankData = getRankData(newLp);
 
-            if (!hasForfeited) {
+            if (!room.isAI && !hasForfeited) {
+                if (lpChange > 0) newWins++;
+                else newLosses++;
+                await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank, wins: newWins, losses: newLosses }).eq('username', player);
+            } else if (room.isAI && !hasForfeited) {
                 await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank }).eq('username', player);
             }
             
             lpResults[player] = { 
+                username: player,
                 score: hasForfeited ? 0 : room.scores[player], 
                 words: room.words[player] || [], 
                 lpChange: lpChange, 
