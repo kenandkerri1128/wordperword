@@ -112,6 +112,7 @@
             <button class="btn-primary" onclick="login()">Login</button>
             <button class="btn-secondary" onclick="register()">Register</button>
             <p id="authMessage" style="color: var(--danger);"></p>
+            <button id="downloadAppBtn" class="btn-primary" style="display: none; background-color: #ff9800; margin-top: 15px; width: 100%; border-radius: 5px;" onclick="installApp()">📱 Download App</button>
         </div>
     </div>
 
@@ -125,7 +126,6 @@
                 </div>
             </div>
             <div>
-                <button id="downloadAppBtn" class="btn-primary" style="display: none; background-color: #ff9800;" onclick="installApp()">📱 Download App</button>
                 <button id="adminBtn" class="btn-admin" onclick="openAdminPanel()">Admin Panel</button>
                 <button class="btn-danger" onclick="logout()">Logout</button>
             </div>
@@ -140,9 +140,9 @@
                         <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
                         <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
                         
-                        <div style="display: flex; gap: 5px; flex-direction: column;">
-                            <input type="text" id="customRoomPassword" placeholder="Optional Room Password..." style="padding: 10px; border-radius: 5px; border: none; background: rgba(255,255,255,0.1); color: white;" />
+                        <div style="display: flex; gap: 5px; flex-direction: column; margin-top: 10px;">
                             <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
+                            <input type="text" id="customRoomPassword" placeholder="Password for Custom Room (Optional)" style="padding: 10px; border-radius: 5px; border: none; background: rgba(255,255,255,0.1); color: white; text-align: center;" />
                         </div>
                     </div>
 
@@ -165,15 +165,15 @@
                         <hr style="border-color: #444; margin: 15px 0;">
                         <h4>Active Custom Rooms</h4>
                         <div id="roomList" style="text-align: left;"></div>
-                        
-                        <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                            <h3>Custom Room: <span id="customRoomIdText"></span></h3>
-                            <ul id="customWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
-                            <p>Players: <span id="customPlayerCount">1</span>/4</p>
-                            <div style="display: flex; justify-content: center; gap: 10px;">
-                                <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
-                                <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
-                            </div>
+                    </div>
+                    
+                    <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
+                        <h3>Custom Room: <span id="customRoomIdText"></span></h3>
+                        <ul id="customWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
+                        <p>Players: <span id="customPlayerCount">1</span>/4</p>
+                        <div style="display: flex; justify-content: center; gap: 10px;">
+                            <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
+                            <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
                         </div>
                     </div>
                 </div>
@@ -461,6 +461,7 @@
                 pwd = prompt("This room is locked. Enter password:");
                 if (pwd === null) return; 
             }
+            currentRoom = roomId; 
             socket.emit('joinRoom', { roomId: roomId, password: pwd }); 
         }
 
@@ -476,16 +477,21 @@
         });
 
         socket.on('playerJoined', (players) => {
-            if(document.getElementById('roomSetup').style.display === 'block') {
-                document.getElementById('customPlayerCount').innerText = players.length;
-                
-                const list = document.getElementById('customWaitingPlayers');
-                if (list) {
-                    list.innerHTML = '';
-                    players.forEach(p => {
-                        list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;"><strong>${p}</strong></li>`;
-                    });
-                }
+            // Force visibility of waiting room for everyone joining
+            document.getElementById('playMenuGrid').style.display = 'none';
+            document.getElementById('customMenuSection').style.display = 'none';
+            document.getElementById('searchingState').style.display = 'none';
+            document.getElementById('roomSetup').style.display = 'block';
+            document.getElementById('customRoomIdText').innerText = currentRoom;
+
+            document.getElementById('customPlayerCount').innerText = players.length;
+            
+            const list = document.getElementById('customWaitingPlayers');
+            if (list) {
+                list.innerHTML = '';
+                players.forEach(p => {
+                    list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;"><strong>${p}</strong></li>`;
+                });
             }
         });
 
@@ -501,7 +507,10 @@
             });
         });
 
-        socket.on('roomError', (msg) => { alert(msg); });
+        socket.on('roomError', (msg) => { 
+            alert(msg); 
+            currentRoom = null; 
+        });
 
         let selectedTiles = [];
         let currentWordStr = "";
