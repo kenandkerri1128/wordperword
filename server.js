@@ -101,12 +101,42 @@ function generateBoard() {
 }
 
 async function getPlayerWorldRank(username, lp) {
-    const { count, error } = await supabase
-        .from('Wordiers')
-        .select('*', { count: 'exact', head: true })
-        .gt('lp', lp);
-    if (error) return "?";
-    return count + 1;
+    try {
+        const { data: user } = await supabase.from('Wordiers').select('wins, losses').eq('username', username).single();
+        const userWins = user && user.wins ? user.wins : 0;
+        const userLosses = user && user.losses ? user.losses : 0;
+        const userTotal = userWins + userLosses;
+        const userWinRate = userTotal > 0 ? (userWins / userTotal) : 0;
+
+        const { count: countGreaterLp, error: err1 } = await supabase
+            .from('Wordiers')
+            .select('*', { count: 'exact', head: true })
+            .gt('lp', lp);
+        
+        const { data: sameLpPlayers, error: err2 } = await supabase
+            .from('Wordiers')
+            .select('username, wins, losses')
+            .eq('lp', lp)
+            .neq('username', username);
+
+        let higherWinRateCount = 0;
+        if (sameLpPlayers) {
+            for (let p of sameLpPlayers) {
+                const pWins = p.wins || 0;
+                const pLosses = p.losses || 0;
+                const pTotal = pWins + pLosses;
+                const pWinRate = pTotal > 0 ? (pWins / pTotal) : 0;
+                if (pWinRate > userWinRate) {
+                    higherWinRateCount++;
+                }
+            }
+        }
+
+        if (err1) return "?";
+        return countGreaterLp + higherWinRateCount + 1;
+    } catch (e) {
+        return "?";
+    }
 }
 
 function broadcastRoomList() {
@@ -536,6 +566,70 @@ io.on('connection', (socket) => {
         const sortedPlayers = Object.keys(room.scores).sort((a, b) => room.scores[b] - room.scores[a]);
         const lpResults = {};
 
+        const activePlayers = sortedPlayers.filter(p => !p.startsWith('AI_'));
+        const pCount = activePlayers.length;
+
+        const scoreGroups = {};
+        activePlayers.forEach(p => {
+            const score = room.scores[p];
+            if (!scoreGroups[score]) scoreGroups[score] = [];
+            scoreGroups[score].push(p);
+        });
+
+        const uniqueScores = Object.keys(scoreGroups).map(Number).sort((a, b) => b - a);
+        const validPlayersCount = activePlayers.filter(p => onlineUsers[p] && room.scores[p] !== -9999).length;
+        const isTotalTie = uniqueScores.length === 1 && validPlayersCount > 1;
+
+        const lpAssignments = {};
+        const isWinAssignments = {};
+
+        if (isTotalTie) {
+            activePlayers.forEach(p => {
+                lpAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? -20 : 0;
+                isWinAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? false : true;
+            });
+        } else {
+            let placesTaken = 0;
+            uniqueScores.forEach(score => {
+                const tiedPlayers = scoreGroups[score];
+                const numTied = tiedPlayers.length;
+                const place = placesTaken + 1;
+                const isLast = (placesTaken + numTied === pCount);
+
+                let assignedLp = 0;
+
+                if (isLast) {
+                    assignedLp = -5;
+                } else if (place === 1) {
+                    if (numTied === 1) assignedLp = 20;
+                    else if (numTied === 2) assignedLp = 10;
+                    else if (numTied === 3) assignedLp = 6;
+                } else if (place === 2) {
+                    if (pCount === 4) {
+                        if (numTied === 1) assignedLp = 5;
+                        else if (numTied === 2) assignedLp = 2;
+                        else if (numTied === 3) assignedLp = 1;
+                    } else if (pCount === 3) {
+                        if (numTied === 1) assignedLp = 0;
+                    }
+                } else if (place === 3) {
+                    assignedLp = 0;
+                }
+
+                tiedPlayers.forEach(p => {
+                    if (!onlineUsers[p] || room.scores[p] === -9999) {
+                        lpAssignments[p] = -20;
+                        isWinAssignments[p] = false;
+                    } else {
+                        lpAssignments[p] = assignedLp;
+                        isWinAssignments[p] = assignedLp > 0;
+                    }
+                });
+
+                placesTaken += numTied;
+            });
+        }
+
         for (const player of sortedPlayers) {
             if (player.startsWith('AI_')) {
                 lpResults[player] = { username: player, score: room.scores[player], words: room.words[player] || [], lpChange: 0, newLp: 0, rank: "AI Engine", badge: "e.png" };
@@ -553,25 +647,7 @@ io.on('connection', (socket) => {
                     lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
                 }
             } else {
-                if (!isConnected || hasForfeited) {
-                    lpChange = -20;
-                } else {
-                    const pCount = sortedPlayers.filter(p => !p.startsWith('AI_')).length;
-                    const i = sortedPlayers.filter(p => !p.startsWith('AI_')).indexOf(player);
-                    if (pCount === 4) {
-                        if (i === 0) lpChange = 20;
-                        else if (i === 1) lpChange = 5;
-                        else if (i === 2) lpChange = 0;
-                        else if (i === 3) lpChange = -5;
-                    } else if (pCount === 3) {
-                        if (i === 0) lpChange = 20;
-                        else if (i === 1) lpChange = 0;
-                        else if (i === 2) lpChange = -5;
-                    } else if (pCount === 2) {
-                        if (i === 0) lpChange = 20;
-                        else if (i === 1) lpChange = -5;
-                    }
-                }
+                lpChange = lpAssignments[player];
             }
 
             const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', player).single();
@@ -581,7 +657,7 @@ io.on('connection', (socket) => {
             const rankData = getRankData(newLp);
 
             if (!room.isAI && !hasForfeited) {
-                if (lpChange > 0) newWins++;
+                if (isWinAssignments[player]) newWins++;
                 else newLosses++;
                 await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank, wins: newWins, losses: newLosses }).eq('username', player);
             } else if (room.isAI && !hasForfeited) {
