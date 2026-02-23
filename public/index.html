@@ -171,7 +171,7 @@
                     <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
                         <h3>Custom Room: <span id="customRoomIdText"></span></h3>
                         <ul id="customWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
-                        <p>Players: <span id="customPlayerCount">1</span>/4</p>
+                        <p>Players: <span id="customPlayerCount">1</span>/8</p> 
                         <div style="display: flex; justify-content: center; gap: 10px;">
                             <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
                             <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
@@ -519,7 +519,7 @@
             rooms.forEach(r => {
                 const lockIcon = r.isLocked ? '🔒 ' : '';
                 list.innerHTML += `<div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:5px; background: #333; padding: 10px; border-radius: 5px;">
-                    <span>${lockIcon}Room: ${r.id} (${r.players}/4)</span>
+                    <span>${lockIcon}Room: ${r.id} (${r.players}/8)</span>
                     <button class="btn-secondary" onclick="joinCustomRoom('${r.id}', ${r.isLocked})">Join</button>
                 </div>`;
             });
@@ -894,4 +894,3 @@
     </script>
 </body>
 </html>
-
