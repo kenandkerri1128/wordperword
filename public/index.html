@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Word Per Word - PVP Word Puzzle</title>
+    <title>Word Per Word - Origin: Mana Siege</title>
     
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#1a1a24">
@@ -39,7 +39,10 @@
         .rank-badge { width: 50px; height: 50px; object-fit: contain; }
         .lobby-content { display: flex; flex: 1; overflow: hidden; }
         .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto;}
-        .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; }
+        
+        /* Updated right panel for Profile/Patreon layout */
+        .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; justify-content: center; align-items: center; text-align: center; padding: 20px; }
+        .big-badge { width: 180px; height: 180px; object-fit: contain; margin-bottom: 15px; filter: drop-shadow(0px 10px 10px rgba(0,0,0,0.5)); }
         
         .play-menu { display: none; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
         .play-menu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 15px; }
@@ -49,13 +52,6 @@
         .leaderboard-table th { background-color: #111; color: var(--secondary); }
         .badge-cell { width: 60px; text-align: center; }
 
-        .chat-box { flex: 1; display: flex; flex-direction: column; padding: 10px; overflow: hidden; }
-        .chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding: 10px; background-color: rgba(0,0,0,0.3); border-radius: 5px; font-size: 14px; word-wrap: break-word; }
-        .chat-input-area { display: flex; }
-        .chat-input-area input { flex: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none; min-width: 0; }
-        .chat-input-area button { margin: 0; border-radius: 0 5px 5px 0; }
-        .msg-system { color: var(--system-msg); font-weight: bold; }
-        
         #loadingScreen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(26, 26, 36, 0.95); z-index: 50; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
         .spinner { border: 6px solid #333; border-top: 6px solid var(--primary); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -84,16 +80,14 @@
         .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
         .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
 
-        /* --- MOBILE UI FIXES START HERE --- */
+        /* --- MOBILE UI FIXES --- */
         @media (max-width: 768px) {
             body { align-items: flex-start; }
-            /* Make the entire container scrollable to handle small screens */
             .container { height: 100vh; height: 100dvh; border-radius: 0; overflow-y: auto; overflow-x: hidden; }
             .lobby-content { flex-direction: column; overflow: visible; }
             .left-panel { flex: none; border-right: none; border-bottom: 2px solid #444; overflow-y: visible; padding-bottom: 20px; }
             
-            /* Give the chat its own fixed boundary so it doesn't stretch forever */
-            .right-panel { flex: none; height: 350px; min-height: 350px; border-bottom: 2px solid #444; }
+            .right-panel { flex: none; height: auto; min-height: auto; padding: 40px 20px; border-bottom: 2px solid #444; }
             
             .game-layout { flex-direction: column; overflow-y: visible; height: auto; }
             .board-section { flex: none; margin-bottom: 20px; }
@@ -193,14 +187,25 @@
             </div>
             
             <div class="right-panel">
-                <div class="chat-box">
-                    <div class="chat-messages" id="chatMessages"></div>
-                    <div class="chat-input-area">
-                        <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="handleChatEnter(event)">
-                        <button class="btn-primary" onclick="sendChat()">Send</button>
+                <img id="bigHeaderBadge" class="big-badge" src="assets/e.png" alt="Big Rank Badge">
+                <h2 id="bigProfileUsername" style="margin: 0; color: var(--primary); font-size: 32px; letter-spacing: 1px;">Player</h2>
+                <p id="bigProfileRank" style="color: var(--text-muted); font-size: 18px; margin: 5px 0 30px 0; font-weight: bold;">Novice Scribe</p>
+                
+                <a href="https://www.patreon.com/c/OriginManaSiege" target="_blank" style="text-decoration: none;">
+                    <div style="background-color: #FF424D; color: white; padding: 12px 25px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; font-size: 18px; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(255, 66, 77, 0.4);" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
+                        <svg viewBox="0 0 569 546" xmlns="http://www.w3.org/2000/svg" style="width: 24px; height: 24px;"><g><circle cx="362.589" cy="204.589" data-color="1" fill="#fff" r="204.589"></circle><rect data-color="2" fill="#052d49" height="545.796" width="100" x="0" y="0"></rect></g></svg>
+                        Support on Patreon
                     </div>
-                </div>
+                </a>
             </div>
+        </div>
+    </div>
+
+    <div id="broadcastModal" class="modal">
+        <div class="modal-content" style="border: 3px solid var(--system-msg); box-shadow: 0 0 30px rgba(255, 152, 0, 0.5);">
+            <h1 style="color: var(--system-msg); letter-spacing: 2px;">SYSTEM BROADCAST</h1>
+            <h2 id="broadcastText" style="margin: 30px 0; color: white; font-weight: normal; line-height: 1.5;"></h2>
+            <button class="btn-primary" style="background-color: var(--system-msg); padding: 12px 30px; font-size: 18px;" onclick="closeBroadcast()">Understood</button>
         </div>
     </div>
 
@@ -354,28 +359,29 @@
         });
 
         function updateProfileUI(data) {
+            // Update Header Profile
             document.getElementById('profileUsername').innerText = data.username;
             document.getElementById('profileRank').innerText = data.rank;
             document.getElementById('profileLp').innerText = data.lp;
             document.getElementById('headerBadge').src = `assets/${data.badge}`;
+
+            // Update Big Display Profile
+            document.getElementById('bigProfileUsername').innerText = data.username;
+            document.getElementById('bigProfileRank').innerText = data.rank;
+            document.getElementById('bigHeaderBadge').src = `assets/${data.badge}`;
         }
 
-        function sendChat() {
-            const input = document.getElementById('chatInput');
-            if (input.value.trim()) {
-                socket.emit('sendChat', input.value.trim());
-                input.value = '';
-            }
-        }
-        function handleChatEnter(e) { if(e.key === 'Enter') sendChat(); }
-        
+        // Handling Admin Broadcasts via the popup modal
         socket.on('receiveChat', (data) => {
-            const box = document.getElementById('chatMessages');
-            const isSystem = data.username === 'SYSTEM';
-            const msgClass = isSystem ? 'msg-system' : '';
-            box.innerHTML += `<div class="${msgClass}"><strong>[${data.rank}] ${data.username}:</strong> ${data.message}</div>`;
-            box.scrollTop = box.scrollHeight;
+            if (data.username === 'SYSTEM' || data.rank === 'Admin') {
+                document.getElementById('broadcastText').innerText = data.message;
+                document.getElementById('broadcastModal').style.display = 'flex';
+            }
         });
+
+        function closeBroadcast() {
+            document.getElementById('broadcastModal').style.display = 'none';
+        }
 
         socket.on('updateLeaderboard', (players) => {
             const tbody = document.getElementById('leaderboardBody');
@@ -823,4 +829,3 @@
     </script>
 </body>
 </html>
-
