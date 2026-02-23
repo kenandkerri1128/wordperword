@@ -84,18 +84,23 @@
         .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
         .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
 
+        /* --- MOBILE UI FIXES START HERE --- */
         @media (max-width: 768px) {
             body { align-items: flex-start; }
-            .container { height: 100vh; border-radius: 0; }
-            .lobby-content { flex-direction: column; }
-            .left-panel { flex: 1; border-right: none; border-bottom: 2px solid #444; overflow-y: visible; }
-            .right-panel { flex: 1; }
-            .game-layout { flex-direction: column; overflow-y: auto; }
-            .board-section { flex: none; }
+            /* Make the entire container scrollable to handle small screens */
+            .container { height: 100vh; height: 100dvh; border-radius: 0; overflow-y: auto; overflow-x: hidden; }
+            .lobby-content { flex-direction: column; overflow: visible; }
+            .left-panel { flex: none; border-right: none; border-bottom: 2px solid #444; overflow-y: visible; padding-bottom: 20px; }
+            
+            /* Give the chat its own fixed boundary so it doesn't stretch forever */
+            .right-panel { flex: none; height: 350px; min-height: 350px; border-bottom: 2px solid #444; }
+            
+            .game-layout { flex-direction: column; overflow-y: visible; height: auto; }
+            .board-section { flex: none; margin-bottom: 20px; }
             .grid-6x6 { grid-template-columns: repeat(6, 12vw); grid-template-rows: repeat(6, 12vw); gap: 1vw; }
             .tile { font-size: 6vw; }
             .side-section { flex: none; overflow: visible; }
-            .player-list, .found-words { max-height: 200px; }
+            .player-list, .found-words { max-height: 250px; }
             .admin-body { flex-direction: column; }
         }
     </style>
@@ -477,7 +482,6 @@
         });
 
         socket.on('playerJoined', (players) => {
-            // Force visibility of waiting room for everyone joining
             document.getElementById('playMenuGrid').style.display = 'none';
             document.getElementById('customMenuSection').style.display = 'none';
             document.getElementById('searchingState').style.display = 'none';
