@@ -1,0 +1,21 @@
+{
+  "name": "Word Per Word",
+  "short_name": "WPW",
+  "description": "Origin: Mana Siege - Word Per Word Mini Game",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a24",
+  "theme_color": "#1a1a24",
+  "icons": [
+    {
+      "src": "assets/splus.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/splus.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
