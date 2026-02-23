@@ -675,7 +675,7 @@ io.on('connection', (socket) => {
                     lpChange = 0; 
                 } else {
                     // Update AI LP to divide by 5
-                    lpChange = room.scores[player] >= 5 ? Math.floor(room.scores[player] / 5) : 0;
+                    lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
                 }
             } else {
                 lpChange = lpAssignments[player];
@@ -752,3 +752,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
