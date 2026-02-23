@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Word Per Word - Origin: Mana Siege</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a24">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
     <style>
         :root {
             --bg-color: #1a1a24; --panel-bg: #2a2a35; --primary: #4CAF50;
@@ -66,8 +72,7 @@
         .timer { font-size: 32px; font-weight: bold; color: var(--danger); text-align: center; margin-bottom: 10px; }
         
         .spectator-views { display: grid; grid-template-columns: 1fr; gap: 10px; }
-        .spec-player { background: #222; padding: 10px; border-radius: 5px; border-left: 3px solid var(--secondary); }
-        .spec-words { font-size: 12px; color: #ccc; margin-top: 5px; max-height: 80px; overflow-y: auto; }
+        .spec-player { background: #222; padding: 10px; border-radius: 5px; border-left: 3px solid var(--secondary); font-size: 18px; }
 
         .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
         .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
@@ -120,6 +125,7 @@
                 </div>
             </div>
             <div>
+                <button id="downloadAppBtn" class="btn-primary" style="display: none; background-color: #ff9800;" onclick="installApp()">📱 Download App</button>
                 <button id="adminBtn" class="btn-admin" onclick="openAdminPanel()">Admin Panel</button>
                 <button class="btn-danger" onclick="logout()">Logout</button>
             </div>
@@ -175,7 +181,7 @@
                 <h2>World Ranking</h2>
                 <div style="overflow-x: auto;">
                     <table class="leaderboard-table">
-                        <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th></tr></thead>
+                        <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th><th>W-L</th><th>Win%</th></tr></thead>
                         <tbody id="leaderboardBody"></tbody>
                     </table>
                 </div>
@@ -370,11 +376,18 @@
             const tbody = document.getElementById('leaderboardBody');
             tbody.innerHTML = '';
             players.forEach(p => {
+                const w = p.wins || 0;
+                const l = p.losses || 0;
+                const total = w + l;
+                const winRate = total > 0 ? Math.round((w / total) * 100) + '%' : '0%';
+                
                 tbody.innerHTML += `<tr>
                     <td class="badge-cell"><img class="rank-badge" src="assets/${p.badge}" alt="Badge"></td>
                     <td><strong>${p.username}</strong></td>
                     <td>${p.rank}</td>
                     <td>${p.lp}</td>
+                    <td>${w}-${l}</td>
+                    <td>${winRate}</td>
                 </tr>`;
             });
         });
@@ -455,6 +468,9 @@
 
         socket.on('roomCreated', (roomId) => {
             currentRoom = roomId;
+            document.getElementById('playMenuGrid').style.display = 'none';
+            document.getElementById('customMenuSection').style.display = 'none';
+            document.getElementById('searchingState').style.display = 'none';
             document.getElementById('roomSetup').style.display = 'block';
             document.getElementById('customRoomIdText').innerText = roomId;
         });
@@ -557,10 +573,24 @@
         }
 
         function selectTile(tile) {
-            // FIX: Resume audio automatically if browser blocked it on page reload
             if (bgmGame.paused && !isSpectator) playGameMusic();
-            
             if (tile.classList.contains('selected')) return;
+
+            if (selectedTiles.length > 0) {
+                const lastTile = selectedTiles[selectedTiles.length - 1];
+                const lastIdx = parseInt(lastTile.dataset.index);
+                const currIdx = parseInt(tile.dataset.index);
+                
+                const row1 = Math.floor(lastIdx / 6);
+                const col1 = lastIdx % 6;
+                const row2 = Math.floor(currIdx / 6);
+                const col2 = currIdx % 6;
+                
+                if (Math.abs(row1 - row2) > 1 || Math.abs(col1 - col2) > 1) {
+                    return;
+                }
+            }
+
             tile.classList.add('selected');
             selectedTiles.push(tile);
             currentWordStr += tile.innerText;
@@ -617,7 +647,12 @@
 
         socket.on('quitSuccess', (data) => {
             alert(`You have quit the match. Penalty: ${data.penalty} LP.`);
-            updateProfileUI(data);
+            updateProfileUI({
+                username: myUsername,
+                rank: data.rank,
+                lp: data.lp,
+                badge: data.badge
+            });
             returnToLobby();
         });
 
@@ -635,7 +670,7 @@
                     <div style="display:flex; align-items:center; gap:10px;">
                         <span style="font-size:20px; font-weight:bold;">#${index + 1}</span>
                         <img src="assets/${res.badge}" style="width:40px; height:40px; object-fit:contain;">
-                        <span><strong>${p}</strong> <br> <span style="font-size:12px; color:#aaa;">${res.rank}</span></span>
+                        <span><strong>${res.username}</strong> <br> <span style="font-size:12px; color:#aaa;">${res.rank}</span></span>
                     </div>
                     <div style="text-align:right;">
                         <span style="font-size:18px; font-weight:bold;">${res.score} pts</span><br>
@@ -644,7 +679,12 @@
                 </div>`;
                 
                 if (p === myUsername) {
-                    updateProfileUI(res);
+                    updateProfileUI({
+                        username: myUsername,
+                        rank: res.rank,
+                        lp: res.newLp,
+                        badge: res.badge
+                    });
                 }
             });
 
@@ -724,7 +764,6 @@
                 specViews.innerHTML += `
                 <div class="spec-player" id="specBox_${p}">
                     <strong>${p}</strong> - <span id="specScore_${p}">0</span> pts
-                    <div class="spec-words" id="specWords_${p}"></div>
                 </div>`;
             });
 
@@ -734,15 +773,40 @@
         socket.on('spectatorUpdate', (data) => {
             if (!isSpectator) return;
             const scoreSpan = document.getElementById(`specScore_${data.player}`);
-            const wordsDiv = document.getElementById(`specWords_${data.player}`);
             
-            if (scoreSpan && wordsDiv) {
+            if (scoreSpan) {
                 const currentScore = parseInt(scoreSpan.innerText) || 0;
                 scoreSpan.innerText = currentScore + data.points;
-                wordsDiv.innerHTML += `<div>${data.word} (+${data.points})</div>`;
-                wordsDiv.scrollTop = wordsDiv.scrollHeight;
             }
         });
+
+        // --- PWA / Download App Logic ---
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then(() => {
+                console.log('Service Worker Registered');
+            }).catch(err => console.error('Service Worker Registration Failed:', err));
+        }
+
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const downloadBtn = document.getElementById('downloadAppBtn');
+            if (downloadBtn) downloadBtn.style.display = 'inline-block';
+        });
+
+        function installApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                        document.getElementById('downloadAppBtn').style.display = 'none';
+                    }
+                    deferredPrompt = null;
+                });
+            }
+        }
     </script>
 </body>
 </html>
