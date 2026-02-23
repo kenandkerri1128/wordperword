@@ -40,7 +40,6 @@
         .lobby-content { display: flex; flex: 1; overflow: hidden; }
         .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto;}
         
-        /* Updated right panel for Profile/Patreon layout */
         .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; justify-content: center; align-items: center; text-align: center; padding: 20px; }
         .big-badge { width: 180px; height: 180px; object-fit: contain; margin-bottom: 15px; filter: drop-shadow(0px 10px 10px rgba(0,0,0,0.5)); }
         
@@ -74,13 +73,16 @@
         .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
         .result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; }
         
+        /* New Reveal Phase CSS */
+        #revealModal .modal-content { max-width: 1000px; width: 95%; }
+        .reveal-word { transition: all 0.5s ease; font-weight: bold; margin-bottom: 5px; font-size: 18px; }
+
         #adminPanel { display: none; position: absolute; top: 5%; left: 5%; width: 90%; height: 90%; background: #1a1a24; border: 2px solid #9c27b0; border-radius: 10px; z-index: 200; flex-direction: column; padding: 20px; box-sizing: border-box; box-shadow: 0 0 20px #9c27b0; }
         .admin-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #9c27b0; padding-bottom: 10px; margin-bottom: 15px; }
         .admin-body { display: flex; gap: 20px; flex: 1; overflow: hidden; }
         .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
         .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
 
-        /* --- MOBILE UI FIXES --- */
         @media (max-width: 768px) {
             body { align-items: flex-start; }
             .container { height: 100vh; height: 100dvh; border-radius: 0; overflow-y: auto; overflow-x: hidden; }
@@ -191,7 +193,7 @@
                 <h2 id="bigProfileUsername" style="margin: 0; color: var(--primary); font-size: 32px; letter-spacing: 1px;">Player</h2>
                 <p id="bigProfileRank" style="color: var(--text-muted); font-size: 18px; margin: 5px 0 30px 0; font-weight: bold;">Novice Scribe</p>
                 
-                <a href="https://www.patreon.com/c/xeniegaming" target="_blank" style="text-decoration: none;">
+                <a href="https://www.patreon.com/c/OriginManaSiege" target="_blank" style="text-decoration: none;">
                     <div style="background-color: #FF424D; color: white; padding: 12px 25px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; font-size: 18px; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(255, 66, 77, 0.4);" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                         <svg viewBox="0 0 569 546" xmlns="http://www.w3.org/2000/svg" style="width: 24px; height: 24px;"><g><circle cx="362.589" cy="204.589" data-color="1" fill="#fff" r="204.589"></circle><rect data-color="2" fill="#052d49" height="545.796" width="100" x="0" y="0"></rect></g></svg>
                         Support on Patreon
@@ -235,11 +237,20 @@
                     <div id="spectatorViews" class="spectator-views" style="display: none;"></div>
                 </div>
                 <div class="found-words" id="myScoreSection">
-                    <h3>My Score: <span id="myGameScore">0</span></h3>
-                    <ul id="myFoundWordsList" style="list-style: none; padding: 0; color: var(--secondary);"></ul>
+                    <h3>Words Found: <span id="myGameScore">0</span></h3>
+                    <ul id="myFoundWordsList" style="list-style: none; padding: 0; color: var(--text-light);"></ul>
                 </div>
                 <button id="quitGameBtn" class="btn-danger" style="margin-top: auto;" onclick="quitGame()">Quit Game (Penalty)</button>
             </div>
+        </div>
+    </div>
+
+    <div id="revealModal" class="modal">
+        <div class="modal-content">
+            <h1 style="color: var(--primary); margin-top: 0;">Word Reveal Phase</h1>
+            <p style="color: var(--text-muted);">Comparing answers... Identical words will be crossed out!</p>
+            <div id="revealContainer" style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-top: 20px;">
+                </div>
         </div>
     </div>
 
@@ -359,19 +370,16 @@
         });
 
         function updateProfileUI(data) {
-            // Update Header Profile
             document.getElementById('profileUsername').innerText = data.username;
             document.getElementById('profileRank').innerText = data.rank;
             document.getElementById('profileLp').innerText = data.lp;
             document.getElementById('headerBadge').src = `assets/${data.badge}`;
 
-            // Update Big Display Profile
             document.getElementById('bigProfileUsername').innerText = data.username;
             document.getElementById('bigProfileRank').innerText = data.rank;
             document.getElementById('bigHeaderBadge').src = `assets/${data.badge}`;
         }
 
-        // Handling Admin Broadcasts via the popup modal
         socket.on('receiveChat', (data) => {
             if (data.username === 'SYSTEM' || data.rank === 'Admin') {
                 document.getElementById('broadcastText').innerText = data.message;
@@ -637,9 +645,9 @@
         socket.on('wordResult', (data) => {
             const msg = document.getElementById('wordMessage');
             if (data.success) {
-                msg.innerText = `+${data.points} points!`;
+                msg.innerText = `Word found!`;
                 msg.style.color = "var(--primary)";
-                document.getElementById('myFoundWordsList').innerHTML += `<li>${data.word} (+${data.points})</li>`;
+                document.getElementById('myFoundWordsList').innerHTML += `<li>${data.word}</li>`;
                 const wordsList = document.getElementById('myScoreSection');
                 wordsList.scrollTop = wordsList.scrollHeight;
             } else {
@@ -648,8 +656,8 @@
             }
         });
 
-        socket.on('myScoreUpdate', (newScore) => {
-            document.getElementById('myGameScore').innerText = newScore;
+        socket.on('myScoreUpdate', (newWordCount) => {
+            document.getElementById('myGameScore').innerText = newWordCount;
         });
 
         socket.on('timeUpdate', (time) => {
@@ -676,6 +684,63 @@
         });
 
         socket.on('gameOver', (data) => {
+            // STEP 1: Set up Reveal Phase Screen
+            const revealContainer = document.getElementById('revealContainer');
+            revealContainer.innerHTML = '';
+            
+            data.sortedPlayers.forEach(p => {
+                const res = data.results[p];
+                if (!res.detailedWords) res.detailedWords = []; 
+                
+                let listHTML = '';
+                res.detailedWords.forEach(dw => {
+                    listHTML += `<li id="word-${p}-${dw.word}" class="reveal-word" data-unique="${dw.isUnique}">${dw.word} <span class="reveal-pts" style="display:none; color:var(--primary); font-size:12px;">(+${dw.points})</span></li>`;
+                });
+                
+                revealContainer.innerHTML += `
+                <div style="flex: 1; min-width: 150px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px;">
+                    <h3 style="margin-top:0;">${p}</h3>
+                    <h4 id="reveal-score-${p}" style="color: var(--secondary);">Score: ?</h4>
+                    <ul style="list-style: none; padding: 0; text-align: left; max-height: 350px; overflow-y: auto;">
+                        ${listHTML}
+                    </ul>
+                </div>`;
+            });
+            
+            document.getElementById('revealModal').style.display = 'flex';
+            
+            // Phase 1 Animation: 3 Seconds in, Cross out duplicates!
+            setTimeout(() => {
+                document.querySelectorAll('.reveal-word').forEach(el => {
+                    if (el.dataset.unique === 'false') {
+                        el.style.textDecoration = 'line-through';
+                        el.style.color = 'var(--danger)';
+                    } else {
+                        el.style.color = 'var(--text-light)';
+                        el.querySelector('.reveal-pts').style.display = 'inline';
+                    }
+                });
+                
+                // Phase 2 Animation: 2 Seconds later, show the calculated Scores
+                setTimeout(() => {
+                    data.sortedPlayers.forEach(p => {
+                        document.getElementById(`reveal-score-${p}`).innerText = `Final Score: ${data.results[p].score}`;
+                        document.getElementById(`reveal-score-${p}`).style.color = 'var(--primary)';
+                    });
+                    
+                    // Phase 3: 4 Seconds later, close reveal and show standard final LP board
+                    setTimeout(() => {
+                        document.getElementById('revealModal').style.display = 'none';
+                        showGameOverBoard(data);
+                    }, 4500);
+
+                }, 2500);
+
+            }, 3000);
+        });
+
+        // STEP 2: The classic LP ranking board after the reveal
+        function showGameOverBoard(data) {
             const resultsDiv = document.getElementById('gameOverResults');
             resultsDiv.innerHTML = '';
             
@@ -708,7 +773,7 @@
             });
 
             document.getElementById('gameOverModal').style.display = 'flex';
-        });
+        }
 
         function resetPlayMenuUI() {
             document.getElementById('searchingState').style.display = 'none';
@@ -782,7 +847,7 @@
             data.players.forEach(p => {
                 specViews.innerHTML += `
                 <div class="spec-player" id="specBox_${p}">
-                    <strong>${p}</strong> - <span id="specScore_${p}">0</span> pts
+                    <strong>${p}</strong> - <span id="specScore_${p}">0</span> words
                 </div>`;
             });
 
@@ -795,7 +860,7 @@
             
             if (scoreSpan) {
                 const currentScore = parseInt(scoreSpan.innerText) || 0;
-                scoreSpan.innerText = currentScore + data.points;
+                scoreSpan.innerText = currentScore + 1; // Tracks words found instead of points
             }
         });
 
@@ -829,5 +894,3 @@
     </script>
 </body>
 </html>
-
-
