@@ -113,7 +113,8 @@
             <button class="btn-primary" onclick="login()">Login</button>
             <button class="btn-secondary" onclick="register()">Register</button>
             <p id="authMessage" style="color: var(--danger);"></p>
-            <button id="downloadAppBtn" class="btn-primary" style="display: none; background-color: #ff9800; margin-top: 15px; width: 100%; border-radius: 5px;" onclick="installApp()">📱 Download App</button>
+            
+            <button id="downloadAppBtn" class="btn-primary" style="background-color: #ff9800; margin-top: 15px; width: 100%; border-radius: 5px;" onclick="installApp()">📱 Download App</button>
         </div>
     </div>
 
@@ -865,18 +866,10 @@
         });
 
         // --- PWA / Download App Logic ---
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').then(() => {
-                console.log('Service Worker Registered');
-            }).catch(err => console.error('Service Worker Registration Failed:', err));
-        }
-
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            const downloadBtn = document.getElementById('downloadAppBtn');
-            if (downloadBtn) downloadBtn.style.display = 'inline-block';
         });
 
         function installApp() {
@@ -885,11 +878,18 @@
                 deferredPrompt.userChoice.then((choiceResult) => {
                     if (choiceResult.outcome === 'accepted') {
                         console.log('User accepted the install prompt');
-                        document.getElementById('downloadAppBtn').style.display = 'none';
                     }
                     deferredPrompt = null;
                 });
+            } else {
+                alert("To install the app:\n\nAndroid: Tap the 3 dots menu and select 'Install app' or 'Add to Home screen'.\n\niOS: Tap the Share icon and select 'Add to Home Screen'.");
             }
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then(() => {
+                console.log('Service Worker Registered');
+            }).catch(err => console.error('Service Worker Registration Failed:', err));
         }
     </script>
 </body>
