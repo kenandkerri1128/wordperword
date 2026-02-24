@@ -51,6 +51,10 @@
         .leaderboard-table th { background-color: #111; color: var(--secondary); }
         .badge-cell { width: 60px; text-align: center; }
 
+        /* NEW LEADERBOARD CSS */
+        .gold-shine { color: #FFD700 !important; text-shadow: 0 0 10px rgba(255, 215, 0, 0.8), 0 0 20px rgba(255, 215, 0, 0.5) !important; font-weight: bold; }
+        .lp-red { color: var(--danger) !important; font-weight: bold; }
+
         #loadingScreen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(26, 26, 36, 0.95); z-index: 50; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
         .spinner { border: 6px solid #333; border-top: 6px solid var(--primary); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -73,7 +77,7 @@
         .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
         .result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; }
         
-        /* New Reveal Phase CSS */
+        /* Reveal Phase CSS */
         #revealModal .modal-content { max-width: 1000px; width: 95%; }
         .reveal-word { transition: all 0.5s ease; font-weight: bold; margin-bottom: 5px; font-size: 18px; }
 
@@ -112,7 +116,7 @@
             <input type="password" id="passwordInput" placeholder="Password" />
             <button class="btn-primary" onclick="login()">Login</button>
             <button class="btn-secondary" onclick="register()">Register</button>
-            <p id="authMessage" style="color: var(--danger);"></p>
+            <p id="authMessage" style="color: var(--danger); font-weight: bold; margin-top: 15px;"></p>
             
             <button id="downloadAppBtn" class="btn-primary" style="background-color: #ff9800; margin-top: 15px; width: 100%; border-radius: 5px;" onclick="installApp()">📱 Download App</button>
         </div>
@@ -183,7 +187,7 @@
                 <h2>World Ranking</h2>
                 <div style="overflow-x: auto;">
                     <table class="leaderboard-table">
-                        <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th><th>W-L</th><th>Win%</th></tr></thead>
+                        <thead><tr><th class="badge-cell">Rank / Badge</th><th>Player</th><th>Rank Title</th><th>LP</th><th>W-L</th><th>Win%</th></tr></thead>
                         <tbody id="leaderboardBody"></tbody>
                     </table>
                 </div>
@@ -192,7 +196,8 @@
             <div class="right-panel">
                 <img id="bigHeaderBadge" class="big-badge" src="assets/e.png" alt="Big Rank Badge">
                 <h2 id="bigProfileUsername" style="margin: 0; color: var(--primary); font-size: 32px; letter-spacing: 1px;">Player</h2>
-                <p id="bigProfileRank" style="color: var(--text-muted); font-size: 18px; margin: 5px 0 30px 0; font-weight: bold;">Novice Scribe</p>
+                <p id="bigProfileRank" style="color: var(--text-muted); font-size: 18px; margin: 5px 0 5px 0; font-weight: bold;">Novice Scribe</p>
+                <p id="bigProfileStats" style="color: var(--secondary); font-size: 15px; margin: 0 0 25px 0; font-weight: bold;"></p>
                 
                 <a href="https://www.patreon.com/c/xeniegaming" target="_blank" style="text-decoration: none;">
                     <div style="background-color: #FF424D; color: white; padding: 12px 25px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; font-size: 18px; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(255, 66, 77, 0.4);" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
@@ -358,7 +363,7 @@
 
         socket.on('authError', (msg) => {
             document.getElementById('authMessage').innerText = msg;
-            if (msg.includes("another tab") || msg.includes("expired")) {
+            if (msg.includes("device") || msg.includes("expired")) {
                 localStorage.removeItem('wpw_user');
                 localStorage.removeItem('wpw_pass');
             }
@@ -379,6 +384,12 @@
             document.getElementById('bigProfileUsername').innerText = data.username;
             document.getElementById('bigProfileRank').innerText = data.rank;
             document.getElementById('bigHeaderBadge').src = `assets/${data.badge}`;
+            
+            if (data.wins !== undefined && data.losses !== undefined) {
+                const total = data.wins + data.losses;
+                const ratio = total > 0 ? Math.round((data.wins / total) * 100) + '%' : '0%';
+                document.getElementById('bigProfileStats').innerText = `Wins: ${data.wins} | Losses: ${data.losses} | Win Rate: ${ratio}`;
+            }
         }
 
         socket.on('receiveChat', (data) => {
@@ -395,17 +406,20 @@
         socket.on('updateLeaderboard', (players) => {
             const tbody = document.getElementById('leaderboardBody');
             tbody.innerHTML = '';
-            players.forEach(p => {
+            players.forEach((p, index) => {
                 const w = p.wins || 0;
                 const l = p.losses || 0;
                 const total = w + l;
                 const winRate = total > 0 ? Math.round((w / total) * 100) + '%' : '0%';
                 
+                const rankNum = index + 1;
+                const shineClass = index < 3 ? 'gold-shine' : '';
+                
                 tbody.innerHTML += `<tr>
-                    <td class="badge-cell"><img class="rank-badge" src="assets/${p.badge}" alt="Badge"></td>
-                    <td><strong>${p.username}</strong></td>
+                    <td class="badge-cell ${shineClass}">#${rankNum} &nbsp; <img class="rank-badge" src="assets/${p.badge}" alt="Badge" style="vertical-align: middle;"></td>
+                    <td class="${shineClass}"><strong>${p.username}</strong></td>
                     <td>${p.rank}</td>
-                    <td>${p.lp}</td>
+                    <td class="lp-red">${p.lp}</td>
                     <td>${w}-${l}</td>
                     <td>${winRate}</td>
                 </tr>`;
@@ -558,6 +572,15 @@
             const mins = Math.floor(data.time / 60);
             const secs = data.time % 60;
             document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            
+            // Sync Profile UI if rejoining
+            if (data.wins !== undefined && data.losses !== undefined) {
+                updateProfileUI({
+                    username: myUsername, rank: document.getElementById('profileRank').innerText,
+                    lp: document.getElementById('profileLp').innerText, badge: document.getElementById('headerBadge').src.split('/').pop(),
+                    wins: data.wins, losses: data.losses
+                });
+            }
         });
 
         function setupGameBoard(data) {
@@ -768,7 +791,9 @@
                         username: myUsername,
                         rank: res.rank,
                         lp: res.newLp,
-                        badge: res.badge
+                        badge: res.badge,
+                        wins: res.wins,
+                        losses: res.losses
                     });
                 }
             });
