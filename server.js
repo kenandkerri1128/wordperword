@@ -136,7 +136,8 @@ async function getPlayerWorldRank(username, lp) {
 }
 
 function broadcastRoomList() {
-    const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 8).map(id => ({
+    // Only broadcast custom rooms that are currently in the 'waiting' state
+    const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].status === 'waiting' && rooms[id].players.length < 8).map(id => ({
         id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
     }));
     io.emit('roomListUpdate', availableRooms);
@@ -146,24 +147,24 @@ io.on('connection', (socket) => {
     let currentUser = null;
 
     socket.on('register', async (data) => {
-        if (onlineUsers[data.username]) return socket.emit('authError', 'Game already open in another tab.');
+        if (onlineUsers[data.username]) return socket.emit('authError', 'Account is already logged in on another device.');
         const { data: existingUser } = await supabase.from('Wordiers').select('username').eq('username', data.username).single();
-        if (existingUser) return socket.emit('authError', 'Username already exists.');
+        if (existingUser) return socket.emit('authError', 'Username is already taken. Please choose another.');
 
         const initialRankData = getRankData(0);
         const { error } = await supabase.from('Wordiers').insert([{ username: data.username, password: data.password, lp: 0, rank: initialRankData.rank, wins: 0, losses: 0 }]);
         
-        if (error) socket.emit('authError', 'Database error.');
+        if (error) socket.emit('authError', 'Database error. Please try again.');
         else {
             currentUser = data.username;
             onlineUsers[currentUser] = socket.id;
-            socket.emit('authSuccess', { username: currentUser, lp: 0, rank: initialRankData.rank, badge: initialRankData.badge });
+            socket.emit('authSuccess', { username: currentUser, lp: 0, rank: initialRankData.rank, badge: initialRankData.badge, wins: 0, losses: 0 });
             sendAdminUpdate();
         }
     });
 
     socket.on('login', async (data) => {
-        if (onlineUsers[data.username]) return socket.emit('authError', 'Game already open in another tab.');
+        if (onlineUsers[data.username]) return socket.emit('authError', 'Account is already logged in on another device.');
         const { data: user } = await supabase.from('Wordiers').select('*').eq('username', data.username).eq('password', data.password).single();
         
         if (user) {
@@ -172,7 +173,7 @@ io.on('connection', (socket) => {
             const rankData = getRankData(user.lp);
             if (user.rank !== rankData.rank) await supabase.from('Wordiers').update({ rank: rankData.rank }).eq('username', user.username);
             
-            socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge });
+            socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge, wins: user.wins || 0, losses: user.losses || 0 });
             sendAdminUpdate();
         } else {
             socket.emit('authError', 'Invalid username or password.');
@@ -181,7 +182,7 @@ io.on('connection', (socket) => {
 
     socket.on('reconnectUser', async (data) => {
         if (onlineUsers[data.username] && onlineUsers[data.username] !== socket.id) {
-            return socket.emit('authError', 'Game already open in another tab.');
+            return socket.emit('authError', 'Account is already logged in on another device.');
         }
         const { data: user } = await supabase.from('Wordiers').select('*').eq('username', data.username).eq('password', data.password).single();
         if (user) {
@@ -205,10 +206,11 @@ io.on('connection', (socket) => {
             if (activeRoom) {
                 socket.emit('rejoinGame', {
                     roomId: activeRoom.id, board: activeRoom.board, players: activeRoom.players, time: activeRoom.time,
-                    myScore: activeRoom.words[currentUser].length, myWords: activeRoom.words[currentUser]
+                    myScore: activeRoom.words[currentUser].length, myWords: activeRoom.words[currentUser],
+                    wins: user.wins || 0, losses: user.losses || 0
                 });
             } else {
-                socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge });
+                socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge, wins: user.wins || 0, losses: user.losses || 0 });
             }
             sendAdminUpdate();
         } else {
@@ -242,6 +244,7 @@ io.on('connection', (socket) => {
         if (!room) return;
         room.isRankedWaiting = false; 
         room.status = 'playing'; 
+        broadcastRoomList(); // Force list update so room disappears
         
         io.to(roomId).emit('gameLoading', { roomId: roomId, board: room.board, players: room.players });
         
@@ -267,7 +270,7 @@ io.on('connection', (socket) => {
         let joinedRoomId = null;
         for (const roomId in rooms) {
             const room = rooms[roomId];
-            if (room.isRankedWaiting && room.players.length < 4) {
+            if (room.isRankedWaiting && room.status === 'waiting' && room.players.length < 4) {
                 if (Math.abs(room.baseLp - playerLp) <= 200) {
                     joinedRoomId = roomId;
                     break;
@@ -359,6 +362,8 @@ io.on('connection', (socket) => {
         if (room.words) delete room.words[userToLeave];
         
         if (room.players.length === 0) {
+            if (room.interval) clearInterval(room.interval);
+            if (room.aiIntervals) room.aiIntervals.forEach(clearInterval);
             delete rooms[roomId];
         } else {
             if (room.isRankedWaiting) {
@@ -432,8 +437,9 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', (data) => {
         const { roomId, password } = data;
-        if (!currentUser || !rooms[roomId] || rooms[roomId].players.length >= 8) {
-            return socket.emit('roomError', 'Room unavailable.');
+        // Verify room is actually waiting to avoid mid-game crashes
+        if (!currentUser || !rooms[roomId] || rooms[roomId].status !== 'waiting' || rooms[roomId].players.length >= 8) {
+            return socket.emit('roomError', 'Room unavailable or game has already started.');
         }
         if (rooms[roomId].password && rooms[roomId].password !== password) {
             return socket.emit('roomError', 'Incorrect password.');
@@ -489,7 +495,7 @@ io.on('connection', (socket) => {
                 const randomWord = allWords[Math.floor(Math.random() * allWords.length)];
                 if (randomWord.length >= 3 && randomWord.length <= 5 && !room.words[ai].includes(randomWord)) {
                     room.words[ai].push(randomWord);
-                    io.to(roomId).emit('spectatorUpdate', { player: ai, points: 1 }); // Just emits word count increment
+                    io.to(roomId).emit('spectatorUpdate', { player: ai, points: 1 });
                 }
             }, 5000 + Math.random() * 6000); 
             room.aiIntervals.push(interval);
@@ -509,7 +515,7 @@ io.on('connection', (socket) => {
         room.words[currentUser].push(cleanWord);
 
         socket.emit('wordResult', { success: true, word: cleanWord });
-        socket.emit('myScoreUpdate', room.words[currentUser].length); // Transmits word count instead of score
+        socket.emit('myScoreUpdate', room.words[currentUser].length); 
         io.to(roomId).emit('spectatorUpdate', { player: currentUser, points: 1 });
     });
 
@@ -519,7 +525,7 @@ io.on('connection', (socket) => {
         room.scores[currentUser] = -9999; 
         socket.leave(roomId);
         
-        const lpChange = room.isAI ? 0 : -20;
+        const lpChange = room.isAI ? 0 : (room.isCustom ? -5 : -20);
         const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', currentUser).single();
         let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
         let newLosses = (userData ? userData.losses : 0) + (room.isAI ? 0 : 1);
@@ -534,10 +540,15 @@ io.on('connection', (socket) => {
         if (!room) return;
 
         room.interval = setInterval(() => {
-            room.time--;
-            io.to(roomId).emit('timeUpdate', room.time);
-            if (room.time <= 0) {
+            // Safety Check: if room was suddenly deleted due to all disconnecting
+            if (!rooms[roomId]) {
                 clearInterval(room.interval);
+                return;
+            }
+            rooms[roomId].time--;
+            io.to(roomId).emit('timeUpdate', rooms[roomId].time);
+            if (rooms[roomId].time <= 0) {
+                clearInterval(rooms[roomId].interval);
                 handleGameOver(roomId);
             }
         }, 1000);
@@ -547,21 +558,18 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         if (!room) return;
 
-        if (room.isAI) room.aiIntervals.forEach(clearInterval);
+        if (room.isAI && room.aiIntervals) room.aiIntervals.forEach(clearInterval);
+        if (room.interval) clearInterval(room.interval);
 
         const wordFreq = {};
         const allPlayers = room.players;
         
-        // Count frequencies of all valid words across all players
         allPlayers.forEach(p => {
-            if (room.scores[p] !== -9999) { // Ignore words from players who quit
-                room.words[p].forEach(w => {
-                    wordFreq[w] = (wordFreq[w] || 0) + 1;
-                });
+            if (room.scores[p] !== -9999) { 
+                room.words[p].forEach(w => { wordFreq[w] = (wordFreq[w] || 0) + 1; });
             }
         });
 
-        // Evaluate unique words and set final scores
         room.detailedWords = {};
         allPlayers.forEach(p => {
             if (room.scores[p] === -9999) return;
@@ -578,7 +586,6 @@ io.on('connection', (socket) => {
             room.detailedWords[p] = detailedWords;
         });
 
-        // Now sort based on the new computed scores
         const sortedPlayers = Object.keys(room.scores).sort((a, b) => room.scores[b] - room.scores[a]);
         const lpResults = {};
 
@@ -601,7 +608,8 @@ io.on('connection', (socket) => {
 
         if (isTotalTie) {
             activePlayers.forEach(p => {
-                lpAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? -20 : 0;
+                const disconnectPenalty = room.isCustom ? -5 : -20;
+                lpAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? disconnectPenalty : 0;
                 isWinAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? false : true;
             });
         } else {
@@ -614,31 +622,42 @@ io.on('connection', (socket) => {
 
                 let assignedLp = 0;
 
-                if (isLast) {
-                    assignedLp = -5;
-                } else if (place === 1) {
-                    if (numTied === 1) assignedLp = 20;
-                    else if (numTied === 2) assignedLp = 10;
-                    else if (numTied === 3) assignedLp = 6;
-                } else if (place === 2) {
-                    if (pCount === 4) {
-                        if (numTied === 1) assignedLp = 5;
-                        else if (numTied === 2) assignedLp = 2;
-                        else if (numTied === 3) assignedLp = 1;
-                    } else if (pCount === 3) {
-                        if (numTied === 1) assignedLp = 0;
+                if (room.isCustom) {
+                    if (place === 1) {
+                        assignedLp = 5;
+                    } else if (isLast && pCount > 1) {
+                        assignedLp = -5;
+                    } else {
+                        assignedLp = 0;
                     }
-                } else if (place === 3) {
-                    assignedLp = 0;
+                } else {
+                    // Ranked Tiebreaker Preserved
+                    if (isLast) {
+                        assignedLp = -5;
+                    } else if (place === 1) {
+                        if (numTied === 1) assignedLp = 20;
+                        else if (numTied === 2) assignedLp = 10;
+                        else if (numTied === 3) assignedLp = 6;
+                    } else if (place === 2) {
+                        if (pCount === 4) {
+                            if (numTied === 1) assignedLp = 5;
+                            else if (numTied === 2) assignedLp = 2;
+                            else if (numTied === 3) assignedLp = 1;
+                        } else if (pCount === 3) {
+                            if (numTied === 1) assignedLp = 0;
+                        }
+                    } else if (place === 3) {
+                        assignedLp = 0;
+                    }
                 }
 
                 tiedPlayers.forEach(p => {
                     if (!onlineUsers[p] || room.scores[p] === -9999) {
-                        lpAssignments[p] = -20;
+                        lpAssignments[p] = room.isCustom ? -5 : -20;
                         isWinAssignments[p] = false;
                     } else {
                         lpAssignments[p] = assignedLp;
-                        isWinAssignments[p] = assignedLp > 0;
+                        isWinAssignments[p] = assignedLp > 0; // 1st Place gets Win, others get Loss/Record update
                     }
                 });
 
@@ -649,13 +668,8 @@ io.on('connection', (socket) => {
         for (const player of sortedPlayers) {
             if (player.startsWith('AI_')) {
                 lpResults[player] = { 
-                    username: player, 
-                    score: room.scores[player], 
-                    detailedWords: room.detailedWords[player] || [], 
-                    lpChange: 0, 
-                    newLp: 0, 
-                    rank: "AI Engine", 
-                    badge: "e.png" 
+                    username: player, score: room.scores[player], detailedWords: room.detailedWords[player] || [], 
+                    lpChange: 0, newLp: 0, rank: "AI Engine", badge: "e.png", wins: 0, losses: 0 
                 };
                 continue;
             }
@@ -663,7 +677,6 @@ io.on('connection', (socket) => {
             const isConnected = !!onlineUsers[player];
             const hasForfeited = room.scores[player] === -9999;
             
-            // FETCH USER DATA HERE SO WE KNOW THEIR CURRENT LP/RANK FOR AI THRESHOLDS
             const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', player).single();
             const currentLp = userData ? userData.lp : 0;
             
@@ -676,13 +689,13 @@ io.on('connection', (socket) => {
                     const score = room.scores[player];
                     const baseLpChange = Math.floor(score / 10);
                     
-                    if (currentLp >= 901) { // S Rank (901+)
+                    if (currentLp >= 901) { 
                         lpChange = score >= 50 ? baseLpChange : -baseLpChange;
-                    } else if (currentLp >= 701) { // A Rank (701-900)
+                    } else if (currentLp >= 701) { 
                         lpChange = score >= 35 ? baseLpChange : -baseLpChange;
-                    } else if (currentLp >= 501) { // B Rank (501-700)
+                    } else if (currentLp >= 501) { 
                         lpChange = score >= 25 ? baseLpChange : -baseLpChange;
-                    } else { // E to C+ Rank (0-500)
+                    } else { 
                         lpChange = score >= 10 ? baseLpChange : 0;
                     }
                 }
@@ -710,11 +723,14 @@ io.on('connection', (socket) => {
                 lpChange: lpChange, 
                 newLp: newLp, 
                 rank: rankData.rank, 
-                badge: rankData.badge 
+                badge: rankData.badge,
+                wins: newWins,
+                losses: newLosses
             };
         }
 
         io.to(roomId).emit('gameOver', { results: lpResults, sortedPlayers: sortedPlayers });
+        // Immediate Deletion of Ghost Room Resources
         delete rooms[roomId];
         broadcastRoomList();
         sendAdminUpdate();
@@ -736,18 +752,23 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('adminSpectate', (roomId) => {
-        if (currentUser === 'Kei' && rooms[roomId]) {
-            socket.join(roomId);
-            socket.emit('spectateStart', { roomId: roomId, board: rooms[roomId].board, players: rooms[roomId].players, time: rooms[roomId].time });
-        }
-    });
-
     socket.on('disconnect', () => {
         if (currentUser) {
             for (const roomId in rooms) {
-                if (rooms[roomId].players.includes(currentUser) && rooms[roomId].status === 'waiting') {
-                    handlePlayerLeave(socket, roomId);
+                const room = rooms[roomId];
+                if (room.players.includes(currentUser)) {
+                    if (room.status === 'waiting') {
+                        handlePlayerLeave(socket, roomId);
+                    } else if (room.status === 'playing') {
+                        // If room is playing, let's see if anyone else human is still here
+                        const humanStillOnline = room.players.some(p => p !== currentUser && !p.startsWith('AI_') && onlineUsers[p]);
+                        if (!humanStillOnline) {
+                            // Eradicate the ghost room instantly
+                            if (room.interval) clearInterval(room.interval);
+                            if (room.aiIntervals) room.aiIntervals.forEach(clearInterval);
+                            delete rooms[roomId];
+                        }
+                    }
                 }
             }
             delete onlineUsers[currentUser];
