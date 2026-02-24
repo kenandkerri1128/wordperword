@@ -1,896 +1,762 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Word Per Word</title>
-    
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1a1a24">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 
-    <style>
-        :root {
-            --bg-color: #1a1a24; --panel-bg: #2a2a35; --primary: #4CAF50;
-            --secondary: #2196F3; --danger: #f44336; --text-light: #f1f1f1;
-            --text-muted: #aaa; --grid-bg: #333; --tile-bg: #e0e0e0;
-            --tile-text: #111; --tile-selected: #ffc107; --system-msg: #ff9800;
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+// --- Dictionary / Trie Setup ---
+class TrieNode {
+    constructor() { this.children = {}; this.isEndOfWord = false; }
+}
+class Trie {
+    constructor() { this.root = new TrieNode(); }
+    insert(word) {
+        let current = this.root;
+        for (let char of word) {
+            if (!current.children[char]) current.children[char] = new TrieNode();
+            current = current.children[char];
         }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-light); margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
-        .container { width: 100%; max-width: 1100px; background-color: var(--panel-bg); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; display: none; flex-direction: column; height: 90vh; position: relative; }
-        .active-screen { display: flex; }
-        
-        .auth-box { margin: auto; text-align: center; padding: 40px; background-color: rgba(0,0,0,0.2); border-radius: 10px; width: 80%; max-width: 400px; }
-        .auth-box h1 { margin-bottom: 20px; color: var(--primary); }
-        .auth-box input { display: block; width: calc(100% - 20px); box-sizing: border-box; margin: 10px auto; padding: 10px; border-radius: 5px; border: none; }
-        
-        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .btn-primary { background-color: var(--primary); color: white; }
-        .btn-secondary { background-color: var(--secondary); color: white; }
-        .btn-danger { background-color: var(--danger); color: white; }
-        .btn-admin { background-color: #9c27b0; color: white; display: none; }
-        button:hover { opacity: 0.8; }
-        
-        .header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background-color: #222; border-bottom: 2px solid var(--primary); flex-wrap: wrap; gap: 10px; }
-        .profile-info { display: flex; align-items: center; gap: 15px; }
-        .profile-text h3 { margin: 0; }
-        .profile-text p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px; }
-        .rank-badge { width: 50px; height: 50px; object-fit: contain; }
-        .lobby-content { display: flex; flex: 1; overflow: hidden; }
-        .left-panel { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto;}
-        
-        .right-panel { flex: 1; display: flex; flex-direction: column; background-color: #1f1f28; justify-content: center; align-items: center; text-align: center; padding: 20px; }
-        .big-badge { width: 180px; height: 180px; object-fit: contain; margin-bottom: 15px; filter: drop-shadow(0px 10px 10px rgba(0,0,0,0.5)); }
-        
-        .play-menu { display: none; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-        .play-menu-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-bottom: 15px; }
-        
-        .leaderboard-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; overflow: hidden;}
-        .leaderboard-table th, .leaderboard-table td { padding: 10px; text-align: left; border-bottom: 1px solid #444; vertical-align: middle; }
-        .leaderboard-table th { background-color: #111; color: var(--secondary); }
-        .badge-cell { width: 60px; text-align: center; }
-
-        #loadingScreen { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(26, 26, 36, 0.95); z-index: 50; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-        .spinner { border: 6px solid #333; border-top: 6px solid var(--primary); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        .game-layout { display: flex; flex: 1; padding: 20px; gap: 20px; overflow: hidden; }
-        .board-section { flex: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-        .grid-6x6 { display: grid; grid-template-columns: repeat(6, 60px); grid-template-rows: repeat(6, 60px); gap: 5px; background-color: var(--grid-bg); padding: 10px; border-radius: 8px; margin-bottom: 20px; user-select: none; }
-        .tile { background-color: var(--tile-bg); color: var(--tile-text); font-size: 24px; font-weight: bold; display: flex; justify-content: center; align-items: center; border-radius: 4px; cursor: pointer; box-shadow: 0 4px 0px #999; touch-action: manipulation; }
-        .tile.selected { background-color: var(--tile-selected); box-shadow: 0 2px 0px #b28704; transform: translateY(2px); }
-        .word-builder { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
-        .current-word { font-size: 24px; letter-spacing: 2px; min-width: 150px; text-align: center; padding: 10px; background: #111; border-radius: 5px; min-height: 28px; }
-        .side-section { flex: 1; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
-        .player-list, .found-words { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px; overflow-y: auto; flex: 1; }
-        .timer { font-size: 32px; font-weight: bold; color: var(--danger); text-align: center; margin-bottom: 10px; }
-        
-        .spectator-views { display: grid; grid-template-columns: 1fr; gap: 10px; }
-        .spec-player { background: #222; padding: 10px; border-radius: 5px; border-left: 3px solid var(--secondary); font-size: 18px; }
-
-        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); justify-content: center; align-items: center; }
-        .modal-content { background-color: var(--panel-bg); padding: 30px; border-radius: 10px; text-align: center; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
-        .result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #444; }
-        
-        /* New Reveal Phase CSS */
-        #revealModal .modal-content { max-width: 1000px; width: 95%; }
-        .reveal-word { transition: all 0.5s ease; font-weight: bold; margin-bottom: 5px; font-size: 18px; }
-
-        #adminPanel { display: none; position: absolute; top: 5%; left: 5%; width: 90%; height: 90%; background: #1a1a24; border: 2px solid #9c27b0; border-radius: 10px; z-index: 200; flex-direction: column; padding: 20px; box-sizing: border-box; box-shadow: 0 0 20px #9c27b0; }
-        .admin-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #9c27b0; padding-bottom: 10px; margin-bottom: 15px; }
-        .admin-body { display: flex; gap: 20px; flex: 1; overflow: hidden; }
-        .admin-col { flex: 1; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px; overflow-y: auto; }
-        .admin-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #444; align-items: center; }
-
-        @media (max-width: 768px) {
-            body { align-items: flex-start; }
-            .container { height: 100vh; height: 100dvh; border-radius: 0; overflow-y: auto; overflow-x: hidden; }
-            .lobby-content { flex-direction: column; overflow: visible; }
-            .left-panel { flex: none; border-right: none; border-bottom: 2px solid #444; overflow-y: visible; padding-bottom: 20px; }
-            
-            .right-panel { flex: none; height: auto; min-height: auto; padding: 40px 20px; border-bottom: 2px solid #444; }
-            
-            .game-layout { flex-direction: column; overflow-y: visible; height: auto; }
-            .board-section { flex: none; margin-bottom: 20px; }
-            .grid-6x6 { grid-template-columns: repeat(6, 12vw); grid-template-rows: repeat(6, 12vw); gap: 1vw; }
-            .tile { font-size: 6vw; }
-            .side-section { flex: none; overflow: visible; }
-            .player-list, .found-words { max-height: 250px; }
-            .admin-body { flex-direction: column; }
+        current.isEndOfWord = true;
+    }
+    search(word) {
+        let current = this.root;
+        for (let char of word) {
+            if (!current.children[char]) return false;
+            current = current.children[char];
         }
-    </style>
-</head>
-<body>
-    <audio id="bgmMenu" src="music/menu.mp3" loop></audio>
-    <audio id="bgmGame" src="music/gameplay.mp3" loop></audio>
+        return current.isEndOfWord;
+    }
+}
 
-    <div id="authScreen" class="container active-screen">
-        <div class="auth-box">
-            <h1>Word Per Word</h1>
-            <input type="text" id="usernameInput" placeholder="Username" />
-            <input type="password" id="passwordInput" placeholder="Password" />
-            <button class="btn-primary" onclick="login()">Login</button>
-            <button class="btn-secondary" onclick="register()">Register</button>
-            <p id="authMessage" style="color: var(--danger);"></p>
-            
-            <button id="downloadAppBtn" class="btn-primary" style="background-color: #ff9800; margin-top: 15px; width: 100%; border-radius: 5px;" onclick="installApp()">📱 Download App</button>
-        </div>
-    </div>
+const dictionaryTrie = new Trie();
+const allWords = [];
 
-    <div id="lobbyScreen" class="container">
-        <div class="header">
-            <div class="profile-info">
-                <img id="headerBadge" class="rank-badge" src="assets/e.png" alt="Rank Badge">
-                <div class="profile-text">
-                    <h3 id="profileUsername">Player</h3>
-                    <p><span id="profileRank">Novice Scribe</span> | LP: <span id="profileLp">0</span></p>
-                </div>
-            </div>
-            <div>
-                <button id="adminBtn" class="btn-admin" onclick="openAdminPanel()">Admin Panel</button>
-                <button class="btn-danger" onclick="logout()">Logout</button>
-            </div>
-        </div>
-        
-        <div class="lobby-content">
-            <div class="left-panel">
-                <button class="btn-primary" style="font-size: 20px; padding: 15px;" onclick="togglePlayMenu()">PLAY NOW</button>
-                
-                <div id="playMenu" class="play-menu">
-                    <div id="playMenuGrid" class="play-menu-grid">
-                        <button class="btn-secondary" onclick="findMatch()">Find Ranked Match</button>
-                        <button class="btn-secondary" style="background-color: #ff9800;" onclick="startAIMatch()">Play Solo (vs AI)</button>
-                        
-                        <div style="display: flex; gap: 5px; flex-direction: column; margin-top: 10px;">
-                            <button class="btn-primary" onclick="createCustomRoom()">Create Custom Room</button>
-                            <input type="text" id="customRoomPassword" placeholder="Password for Custom Room (Optional)" style="padding: 10px; border-radius: 5px; border: none; background: rgba(255,255,255,0.1); color: white; text-align: center;" />
-                        </div>
-                    </div>
-
-                    <div id="searchingState" style="display:none; padding: 15px;">
-                        <h3 style="color: var(--secondary);">Searching for opponents...</h3>
-                        <p style="font-size: 12px; color: var(--text-muted);">(Matchmaking limited to ±200 LP)</p>
-                        <button class="btn-danger" onclick="cancelSearch()">Cancel Search</button>
-                    </div>
-
-                    <div id="rankedWaitingRoom" style="display:none; background: #222; padding: 15px; border-radius: 5px;">
-                        <h3 style="color: var(--primary);">Ranked Match Found!</h3>
-                        <ul id="rankedWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
-                        <div style="display: flex; justify-content: center; gap: 10px;">
-                            <button id="readyRankedBtn" class="btn-primary" onclick="readyRanked()">Ready Up</button>
-                            <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
-                        </div>
-                    </div>
-
-                    <div id="customMenuSection">
-                        <hr style="border-color: #444; margin: 15px 0;">
-                        <h4>Active Custom Rooms</h4>
-                        <div id="roomList" style="text-align: left;"></div>
-                    </div>
-                    
-                    <div id="roomSetup" style="display:none; background: #222; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                        <h3>Custom Room: <span id="customRoomIdText"></span></h3>
-                        <ul id="customWaitingPlayers" style="list-style: none; padding: 0; text-align: left; margin: 15px 0;"></ul>
-                        <p>Players: <span id="customPlayerCount">1</span>/8</p> 
-                        <div style="display: flex; justify-content: center; gap: 10px;">
-                            <button class="btn-primary" onclick="startCustomGame()">Start Game</button>
-                            <button class="btn-danger" onclick="leaveWaitingRoom()">Leave Room</button>
-                        </div>
-                    </div>
-                </div>
-
-                <h2>World Ranking</h2>
-                <div style="overflow-x: auto;">
-                    <table class="leaderboard-table">
-                        <thead><tr><th class="badge-cell">Badge</th><th>Player</th><th>Rank</th><th>LP</th><th>W-L</th><th>Win%</th></tr></thead>
-                        <tbody id="leaderboardBody"></tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div class="right-panel">
-                <img id="bigHeaderBadge" class="big-badge" src="assets/e.png" alt="Big Rank Badge">
-                <h2 id="bigProfileUsername" style="margin: 0; color: var(--primary); font-size: 32px; letter-spacing: 1px;">Player</h2>
-                <p id="bigProfileRank" style="color: var(--text-muted); font-size: 18px; margin: 5px 0 30px 0; font-weight: bold;">Novice Scribe</p>
-                
-                <a href="https://www.patreon.com/c/xeniegaming" target="_blank" style="text-decoration: none;">
-                    <div style="background-color: #FF424D; color: white; padding: 12px 25px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; font-size: 18px; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(255, 66, 77, 0.4);" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                        <svg viewBox="0 0 569 546" xmlns="http://www.w3.org/2000/svg" style="width: 24px; height: 24px;"><g><circle cx="362.589" cy="204.589" data-color="1" fill="#fff" r="204.589"></circle><rect data-color="2" fill="#052d49" height="545.796" width="100" x="0" y="0"></rect></g></svg>
-                        Support on Patreon
-                    </div>
-                </a>
-            </div>
-        </div>
-    </div>
-
-    <div id="broadcastModal" class="modal">
-        <div class="modal-content" style="border: 3px solid var(--system-msg); box-shadow: 0 0 30px rgba(255, 152, 0, 0.5);">
-            <h1 style="color: var(--system-msg); letter-spacing: 2px;">SYSTEM BROADCAST</h1>
-            <h2 id="broadcastText" style="margin: 30px 0; color: white; font-weight: normal; line-height: 1.5;"></h2>
-            <button class="btn-primary" style="background-color: var(--system-msg); padding: 12px 30px; font-size: 18px;" onclick="closeBroadcast()">Understood</button>
-        </div>
-    </div>
-
-    <div id="loadingScreen">
-        <div class="spinner"></div>
-        <h2 style="color: var(--primary);">Preparing Board...</h2>
-        <p id="loadingPlayers" style="color: var(--text-muted);"></p>
-    </div>
-
-    <div id="gameScreen" class="container">
-        <div class="game-layout">
-            <div class="board-section">
-                <div class="timer" id="gameTimer">2:00</div>
-                <div class="grid-6x6" id="gameBoard"></div>
-                <div class="word-builder" id="gameControls">
-                    <div class="current-word" id="currentWordDisplay"></div>
-                    <button class="btn-primary" onclick="submitWord()">Submit</button>
-                    <button class="btn-secondary" onclick="clearWord()">Clear</button>
-                </div>
-                <p id="wordMessage" style="margin-top: 10px; font-weight: bold; min-height: 20px;"></p>
-            </div>
-            
-            <div class="side-section">
-                <div class="player-list">
-                    <h3 id="opponentsTitle">Opponents</h3>
-                    <ul id="gamePlayerList" style="list-style: none; padding: 0;"></ul>
-                    <div id="spectatorViews" class="spectator-views" style="display: none;"></div>
-                </div>
-                <div class="found-words" id="myScoreSection">
-                    <h3>Words Found: <span id="myGameScore">0</span></h3>
-                    <ul id="myFoundWordsList" style="list-style: none; padding: 0; color: var(--text-light);"></ul>
-                </div>
-                <button id="quitGameBtn" class="btn-danger" style="margin-top: auto;" onclick="quitGame()">Quit Game (Penalty)</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="revealModal" class="modal">
-        <div class="modal-content">
-            <h1 style="color: var(--primary); margin-top: 0;">Word Reveal Phase</h1>
-            <p style="color: var(--text-muted);">Comparing answers... Identical words will be crossed out!</p>
-            <div id="revealContainer" style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-top: 20px;">
-                </div>
-        </div>
-    </div>
-
-    <div id="gameOverModal" class="modal">
-        <div class="modal-content">
-            <h1 style="color: var(--primary);">Match Concluded</h1>
-            <h2>Final Results</h2>
-            <div id="gameOverResults" style="margin-top: 20px; text-align: left;"></div>
-            <button class="btn-primary" style="margin-top: 20px;" onclick="returnToLobby()">Return to Lobby</button>
-        </div>
-    </div>
-
-    <div id="adminPanel">
-        <div class="admin-header">
-            <h2>Admin Control Panel (Kei)</h2>
-            <button class="btn-danger" onclick="closeAdminPanel()">Close X</button>
-        </div>
-        <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-            <input type="text" id="adminBroadcastInput" placeholder="System Broadcast Message..." style="flex: 1; padding: 10px;">
-            <button class="btn-secondary" onclick="adminBroadcast()">Broadcast</button>
-        </div>
-        <div class="admin-body">
-            <div class="admin-col">
-                <h3>Online Users</h3>
-                <div id="adminUserList"></div>
-            </div>
-            <div class="admin-col">
-                <h3>Active Matches</h3>
-                <div id="adminRoomList"></div>
-            </div>
-        </div>
-    </div>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        let currentRoom = null;
-        let myUsername = null;
-        let isSpectator = false;
-
-        const bgmMenu = document.getElementById('bgmMenu');
-        const bgmGame = document.getElementById('bgmGame');
-        bgmMenu.volume = 0.5;
-        bgmGame.volume = 0.5;
-
-        function playMenuMusic() {
-            bgmGame.pause(); bgmGame.currentTime = 0;
-            bgmMenu.play().catch(e => console.log("Audio play blocked until interaction."));
-        }
-        function playGameMusic() {
-            bgmMenu.pause(); bgmMenu.currentTime = 0;
-            bgmGame.play().catch(e => console.log("Audio play blocked until interaction."));
-        }
-
-        window.onload = () => {
-            const savedUser = localStorage.getItem('wpw_user');
-            const savedPass = localStorage.getItem('wpw_pass');
-            if (savedUser && savedUser !== 'undefined' && savedPass) {
-                socket.emit('reconnectUser', { username: savedUser, password: savedPass });
-            } else {
-                localStorage.removeItem('wpw_user');
-            }
-        };
-
-        function register() {
-            const u = document.getElementById('usernameInput').value;
-            const p = document.getElementById('passwordInput').value;
-            if(u && p) socket.emit('register', {username: u, password: p});
-        }
-        function login() {
-            const u = document.getElementById('usernameInput').value;
-            const p = document.getElementById('passwordInput').value;
-            if(u && p) socket.emit('login', {username: u, password: p});
-        }
-        function logout() {
-            socket.emit('logout');
-            localStorage.removeItem('wpw_user');
-            localStorage.removeItem('wpw_pass');
-            myUsername = null;
-            document.getElementById('authScreen').classList.add('active-screen');
-            document.getElementById('lobbyScreen').classList.remove('active-screen');
-            bgmMenu.pause();
-        }
-
-        socket.on('authSuccess', (data) => {
-            myUsername = data.username;
-            localStorage.setItem('wpw_user', data.username);
-            const passInput = document.getElementById('passwordInput').value;
-            if(passInput) localStorage.setItem('wpw_pass', passInput);
-            
-            document.getElementById('authMessage').innerText = '';
-            document.getElementById('authScreen').classList.remove('active-screen');
-            document.getElementById('lobbyScreen').classList.add('active-screen');
-            
-            updateProfileUI(data);
-            
-            if (myUsername === 'Kei') document.getElementById('adminBtn').style.display = 'inline-block';
-            else document.getElementById('adminBtn').style.display = 'none';
-
-            playMenuMusic();
-            socket.emit('getLeaderboard');
-            socket.emit('getRoomList');
-        });
-
-        socket.on('authError', (msg) => {
-            document.getElementById('authMessage').innerText = msg;
-            if (msg.includes("another tab") || msg.includes("expired")) {
-                localStorage.removeItem('wpw_user');
-                localStorage.removeItem('wpw_pass');
+try {
+    const dictPath = path.join(__dirname, 'words.txt');
+    if (fs.existsSync(dictPath)) {
+        const fileContent = fs.readFileSync(dictPath, 'utf-8');
+        const words = fileContent.split(/\r?\n/);
+        words.forEach(w => {
+            const cleanWord = w.trim().toUpperCase();
+            if (cleanWord) {
+                dictionaryTrie.insert(cleanWord);
+                allWords.push(cleanWord);
             }
         });
+        console.log(`Dictionary loaded successfully! Total words: ${allWords.length}`);
+    } else {
+        console.warn("WARNING: words.txt not found.");
+    }
+} catch (err) {
+    console.error("Error loading dictionary:", err);
+}
+
+const rooms = {}; 
+let matchmakingQueue = [];
+const onlineUsers = {}; 
+
+function getRankData(lp) {
+    if (lp <= 50) return { rank: "Novice Scribe", badge: "e.png" };
+    if (lp <= 100) return { rank: "Apprentice Lexis", badge: "eplus.png" };
+    if (lp <= 200) return { rank: "Word-Seeker", badge: "d.png" };
+    if (lp <= 300) return { rank: "Fluent Phrase-Maker", badge: "dplus.png" };
+    if (lp <= 400) return { rank: "Skilled Etymologist", badge: "c.png" };
+    if (lp <= 500) return { rank: "Master of Letters", badge: "cplus.png" };
+    if (lp <= 600) return { rank: "Eloquent Scholar", badge: "b.png" };
+    if (lp <= 700) return { rank: "Renowned Author", badge: "bplus.png" };
+    if (lp <= 800) return { rank: "Grand Lexicographer", badge: "a.png" };
+    if (lp <= 900) return { rank: "Sage of the Script", badge: "aplus.png" };
+    if (lp <= 999) return { rank: "Mythic Orator", badge: "s.png" };
+    return { rank: "Genesis Lexicon God", badge: "splus.png" };
+}
+
+function getWordScore(wordLength) {
+    if (wordLength < 3) return 0;
+    return wordLength - 2;
+}
+
+function generateBoard() {
+    const vowels = "AAAAAEEEEEEIIIIIOOOOOUUUUY";
+    const consonants = "BBCCDDFFGGHHHJKLLLLMMNNNNPPQRRRRSSSSTTTTVVWXZ";
+    let board = "";
+    for (let i = 0; i < 12; i++) board += vowels.charAt(Math.floor(Math.random() * vowels.length));
+    for (let i = 0; i < 24; i++) board += consonants.charAt(Math.floor(Math.random() * consonants.length));
+    return board.split('').sort(() => 0.5 - Math.random()).join('');
+}
+
+async function getPlayerWorldRank(username, lp) {
+    try {
+        const { data: user } = await supabase.from('Wordiers').select('wins, losses').eq('username', username).single();
+        const userWins = user && user.wins ? user.wins : 0;
+        const userLosses = user && user.losses ? user.losses : 0;
+        const userTotal = userWins + userLosses;
+        const userWinRate = userTotal > 0 ? (userWins / userTotal) : 0;
+
+        const { count: countGreaterLp, error: err1 } = await supabase
+            .from('Wordiers')
+            .select('*', { count: 'exact', head: true })
+            .gt('lp', lp);
         
-        socket.on('adminKicked', () => { 
-            localStorage.removeItem('wpw_user'); 
-            alert("You have been kicked by the Admin."); 
-            window.location.reload(); 
-        });
+        const { data: sameLpPlayers, error: err2 } = await supabase
+            .from('Wordiers')
+            .select('username, wins, losses')
+            .eq('lp', lp)
+            .neq('username', username);
 
-        function updateProfileUI(data) {
-            document.getElementById('profileUsername').innerText = data.username;
-            document.getElementById('profileRank').innerText = data.rank;
-            document.getElementById('profileLp').innerText = data.lp;
-            document.getElementById('headerBadge').src = `assets/${data.badge}`;
-
-            document.getElementById('bigProfileUsername').innerText = data.username;
-            document.getElementById('bigProfileRank').innerText = data.rank;
-            document.getElementById('bigHeaderBadge').src = `assets/${data.badge}`;
-        }
-
-        socket.on('receiveChat', (data) => {
-            if (data.username === 'SYSTEM' || data.rank === 'Admin') {
-                document.getElementById('broadcastText').innerText = data.message;
-                document.getElementById('broadcastModal').style.display = 'flex';
-            }
-        });
-
-        function closeBroadcast() {
-            document.getElementById('broadcastModal').style.display = 'none';
-        }
-
-        socket.on('updateLeaderboard', (players) => {
-            const tbody = document.getElementById('leaderboardBody');
-            tbody.innerHTML = '';
-            players.forEach(p => {
-                const w = p.wins || 0;
-                const l = p.losses || 0;
-                const total = w + l;
-                const winRate = total > 0 ? Math.round((w / total) * 100) + '%' : '0%';
-                
-                tbody.innerHTML += `<tr>
-                    <td class="badge-cell"><img class="rank-badge" src="assets/${p.badge}" alt="Badge"></td>
-                    <td><strong>${p.username}</strong></td>
-                    <td>${p.rank}</td>
-                    <td>${p.lp}</td>
-                    <td>${w}-${l}</td>
-                    <td>${winRate}</td>
-                </tr>`;
-            });
-        });
-
-        function togglePlayMenu() {
-            const menu = document.getElementById('playMenu');
-            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
-            if (menu.style.display === 'block') socket.emit('getRoomList');
-        }
-
-        function findMatch() {
-            document.getElementById('playMenuGrid').style.display = 'none';
-            document.getElementById('customMenuSection').style.display = 'none';
-            document.getElementById('searchingState').style.display = 'block';
-            socket.emit('findMatch');
-        }
-        function cancelSearch() {
-            socket.emit('cancelMatch');
-            resetPlayMenuUI();
-        }
-
-        socket.on('searchingMatch', () => {
-            document.getElementById('rankedWaitingRoom').style.display = 'none';
-            document.getElementById('searchingState').style.display = 'block';
-        });
-
-        socket.on('rankedLobbyUpdate', (data) => {
-            document.getElementById('searchingState').style.display = 'none';
-            document.getElementById('playMenuGrid').style.display = 'none';
-            document.getElementById('customMenuSection').style.display = 'none';
-            document.getElementById('rankedWaitingRoom').style.display = 'block';
-            currentRoom = data.roomId;
-            
-            const list = document.getElementById('rankedWaitingPlayers');
-            list.innerHTML = '';
-            data.players.forEach(p => {
-                const status = data.readyStates[p] ? '<span style="color: var(--primary)">Ready</span>' : '<span style="color: var(--text-muted)">Waiting...</span>';
-                const info = data.playerDetails ? data.playerDetails[p] : { worldRank: '?', lpRank: '?' };
-                
-                list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;">
-                    <strong>${p}</strong> <span style="font-size: 14px; color: var(--secondary);">(#${info.worldRank} World | ${info.lpRank})</span> - ${status}
-                </li>`;
-            });
-            
-            if(data.readyStates[myUsername]) {
-                document.getElementById('readyRankedBtn').style.display = 'none';
-            } else {
-                document.getElementById('readyRankedBtn').style.display = 'inline-block';
-            }
-        });
-
-        function readyRanked() { socket.emit('readyRanked', currentRoom); }
-        
-        function leaveWaitingRoom() { 
-            socket.emit('leaveWaitingRoom', currentRoom);
-            currentRoom = null;
-            resetPlayMenuUI();
-        }
-
-        function startAIMatch() { socket.emit('startAIMatch'); }
-        
-        function createCustomRoom() { 
-            const pwd = document.getElementById('customRoomPassword').value;
-            socket.emit('createRoom', pwd); 
-            document.getElementById('customRoomPassword').value = '';
-        }
-
-        function joinCustomRoom(roomId, isLocked) { 
-            let pwd = null;
-            if (isLocked) {
-                pwd = prompt("This room is locked. Enter password:");
-                if (pwd === null) return; 
-            }
-            currentRoom = roomId; 
-            socket.emit('joinRoom', { roomId: roomId, password: pwd }); 
-        }
-
-        function startCustomGame() { if(currentRoom) socket.emit('startCustomGame', currentRoom); }
-
-        socket.on('roomCreated', (roomId) => {
-            currentRoom = roomId;
-            document.getElementById('playMenuGrid').style.display = 'none';
-            document.getElementById('customMenuSection').style.display = 'none';
-            document.getElementById('searchingState').style.display = 'none';
-            document.getElementById('roomSetup').style.display = 'block';
-            document.getElementById('customRoomIdText').innerText = roomId;
-        });
-
-        socket.on('playerJoined', (players) => {
-            document.getElementById('playMenuGrid').style.display = 'none';
-            document.getElementById('customMenuSection').style.display = 'none';
-            document.getElementById('searchingState').style.display = 'none';
-            document.getElementById('roomSetup').style.display = 'block';
-            document.getElementById('customRoomIdText').innerText = currentRoom;
-
-            document.getElementById('customPlayerCount').innerText = players.length;
-            
-            const list = document.getElementById('customWaitingPlayers');
-            if (list) {
-                list.innerHTML = '';
-                players.forEach(p => {
-                    list.innerHTML += `<li style="margin-bottom: 8px; font-size: 18px; padding: 5px; background: rgba(0,0,0,0.3); border-radius: 5px;"><strong>${p}</strong></li>`;
-                });
-            }
-        });
-
-        socket.on('roomListUpdate', (rooms) => {
-            const list = document.getElementById('roomList');
-            list.innerHTML = rooms.length === 0 ? '<p>No open custom rooms.</p>' : '';
-            rooms.forEach(r => {
-                const lockIcon = r.isLocked ? '🔒 ' : '';
-                list.innerHTML += `<div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:5px; background: #333; padding: 10px; border-radius: 5px;">
-                    <span>${lockIcon}Room: ${r.id} (${r.players}/8)</span>
-                    <button class="btn-secondary" onclick="joinCustomRoom('${r.id}', ${r.isLocked})">Join</button>
-                </div>`;
-            });
-        });
-
-        socket.on('roomError', (msg) => { 
-            alert(msg); 
-            currentRoom = null; 
-        });
-
-        let selectedTiles = [];
-        let currentWordStr = "";
-
-        socket.on('gameLoading', (data) => {
-            currentRoom = data.roomId;
-            document.getElementById('lobbyScreen').classList.remove('active-screen');
-            document.getElementById('playMenu').style.display = 'none';
-            document.getElementById('loadingPlayers').innerText = "Players: " + data.players.join(' VS ');
-            document.getElementById('loadingScreen').style.display = 'flex';
-        });
-
-        socket.on('gameStart', (data) => {
-            document.getElementById('loadingScreen').style.display = 'none';
-            setupGameBoard(data);
-        });
-
-        socket.on('rejoinGame', (data) => {
-            document.getElementById('authScreen').classList.remove('active-screen');
-            setupGameBoard(data);
-            
-            document.getElementById('myGameScore').innerText = data.myScore;
-            data.myWords.forEach(w => {
-                document.getElementById('myFoundWordsList').innerHTML += `<li>${w}</li>`;
-            });
-            const mins = Math.floor(data.time / 60);
-            const secs = data.time % 60;
-            document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        });
-
-        function setupGameBoard(data) {
-            isSpectator = false;
-            currentRoom = data.roomId;
-            document.getElementById('gameScreen').classList.add('active-screen');
-            document.getElementById('gameControls').style.display = 'flex';
-            document.getElementById('myScoreSection').style.display = 'block';
-            document.getElementById('spectatorViews').style.display = 'none';
-            document.getElementById('gamePlayerList').style.display = 'block';
-            document.getElementById('quitGameBtn').style.display = 'block';
-            document.getElementById('opponentsTitle').innerText = 'Opponents';
-            playGameMusic();
-            
-            renderBoard(data.board);
-
-            const pList = document.getElementById('gamePlayerList');
-            pList.innerHTML = '';
-            data.players.forEach(p => {
-                if(p !== myUsername) {
-                    pList.innerHTML += `<li id="opp_${p}"><strong>${p}</strong>: <span style="color:#aaa; font-style:italic;">Playing...</span></li>`;
-                }
-            });
-
-            document.getElementById('myGameScore').innerText = '0';
-            document.getElementById('myFoundWordsList').innerHTML = '';
-            clearWord();
-        }
-
-        function renderBoard(boardStr) {
-            const boardDiv = document.getElementById('gameBoard');
-            boardDiv.innerHTML = '';
-            for (let i = 0; i < 36; i++) {
-                const tile = document.createElement('div');
-                tile.className = 'tile';
-                tile.innerText = boardStr[i];
-                tile.dataset.index = i;
-                tile.onclick = () => { if (!isSpectator) selectTile(tile); };
-                boardDiv.appendChild(tile);
-            }
-        }
-
-        function selectTile(tile) {
-            if (bgmGame.paused && !isSpectator) playGameMusic();
-            if (tile.classList.contains('selected')) return;
-
-            if (selectedTiles.length > 0) {
-                const lastTile = selectedTiles[selectedTiles.length - 1];
-                const lastIdx = parseInt(lastTile.dataset.index);
-                const currIdx = parseInt(tile.dataset.index);
-                
-                const row1 = Math.floor(lastIdx / 6);
-                const col1 = lastIdx % 6;
-                const row2 = Math.floor(currIdx / 6);
-                const col2 = currIdx % 6;
-                
-                if (Math.abs(row1 - row2) > 1 || Math.abs(col1 - col2) > 1) {
-                    return;
+        let higherWinRateCount = 0;
+        if (sameLpPlayers) {
+            for (let p of sameLpPlayers) {
+                const pWins = p.wins || 0;
+                const pLosses = p.losses || 0;
+                const pTotal = pWins + pLosses;
+                const pWinRate = pTotal > 0 ? (pWins / pTotal) : 0;
+                if (pWinRate > userWinRate) {
+                    higherWinRateCount++;
                 }
             }
-
-            tile.classList.add('selected');
-            selectedTiles.push(tile);
-            currentWordStr += tile.innerText;
-            document.getElementById('currentWordDisplay').innerText = currentWordStr;
         }
 
-        function clearWord() {
-            selectedTiles.forEach(t => t.classList.remove('selected'));
-            selectedTiles = [];
-            currentWordStr = "";
-            document.getElementById('currentWordDisplay').innerText = "";
-            document.getElementById('wordMessage').innerText = "";
+        if (err1) return "?";
+        return countGreaterLp + higherWinRateCount + 1;
+    } catch (e) {
+        return "?";
+    }
+}
+
+function broadcastRoomList() {
+    const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].players.length < 8).map(id => ({
+        id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
+    }));
+    io.emit('roomListUpdate', availableRooms);
+}
+
+io.on('connection', (socket) => {
+    let currentUser = null;
+
+    socket.on('register', async (data) => {
+        if (onlineUsers[data.username]) return socket.emit('authError', 'Game already open in another tab.');
+        const { data: existingUser } = await supabase.from('Wordiers').select('username').eq('username', data.username).single();
+        if (existingUser) return socket.emit('authError', 'Username already exists.');
+
+        const initialRankData = getRankData(0);
+        const { error } = await supabase.from('Wordiers').insert([{ username: data.username, password: data.password, lp: 0, rank: initialRankData.rank, wins: 0, losses: 0 }]);
+        
+        if (error) socket.emit('authError', 'Database error.');
+        else {
+            currentUser = data.username;
+            onlineUsers[currentUser] = socket.id;
+            socket.emit('authSuccess', { username: currentUser, lp: 0, rank: initialRankData.rank, badge: initialRankData.badge });
+            sendAdminUpdate();
         }
+    });
 
-        function submitWord() {
-            if (currentWordStr.length >= 3) {
-                socket.emit('submitWord', { roomId: currentRoom, word: currentWordStr });
-            } else {
-                document.getElementById('wordMessage').innerText = "Word too short!";
-                document.getElementById('wordMessage').style.color = "var(--danger)";
-            }
-            clearWord();
-        }
-
-        socket.on('wordResult', (data) => {
-            const msg = document.getElementById('wordMessage');
-            if (data.success) {
-                msg.innerText = `Word found!`;
-                msg.style.color = "var(--primary)";
-                document.getElementById('myFoundWordsList').innerHTML += `<li>${data.word}</li>`;
-                const wordsList = document.getElementById('myScoreSection');
-                wordsList.scrollTop = wordsList.scrollHeight;
-            } else {
-                msg.innerText = "Invalid or already found.";
-                msg.style.color = "var(--danger)";
-            }
-        });
-
-        socket.on('myScoreUpdate', (newWordCount) => {
-            document.getElementById('myGameScore').innerText = newWordCount;
-        });
-
-        socket.on('timeUpdate', (time) => {
-            const mins = Math.floor(time / 60);
-            const secs = time % 60;
-            document.getElementById('gameTimer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        });
-
-        function quitGame() {
-            if (confirm("Are you sure you want to quit?")) {
-                socket.emit('quitMatch', currentRoom);
-            }
-        }
-
-        socket.on('quitSuccess', (data) => {
-            alert(`You have quit the match. Penalty: ${data.penalty} LP.`);
-            updateProfileUI({
-                username: myUsername,
-                rank: data.rank,
-                lp: data.lp,
-                badge: data.badge
-            });
-            returnToLobby();
-        });
-
-        socket.on('gameOver', (data) => {
-            // STEP 1: Set up Reveal Phase Screen
-            const revealContainer = document.getElementById('revealContainer');
-            revealContainer.innerHTML = '';
+    socket.on('login', async (data) => {
+        if (onlineUsers[data.username]) return socket.emit('authError', 'Game already open in another tab.');
+        const { data: user } = await supabase.from('Wordiers').select('*').eq('username', data.username).eq('password', data.password).single();
+        
+        if (user) {
+            currentUser = user.username;
+            onlineUsers[currentUser] = socket.id;
+            const rankData = getRankData(user.lp);
+            if (user.rank !== rankData.rank) await supabase.from('Wordiers').update({ rank: rankData.rank }).eq('username', user.username);
             
-            data.sortedPlayers.forEach(p => {
-                const res = data.results[p];
-                if (!res.detailedWords) res.detailedWords = []; 
-                
-                let listHTML = '';
-                res.detailedWords.forEach(dw => {
-                    listHTML += `<li id="word-${p}-${dw.word}" class="reveal-word" data-unique="${dw.isUnique}">${dw.word} <span class="reveal-pts" style="display:none; color:var(--primary); font-size:12px;">(+${dw.points})</span></li>`;
-                });
-                
-                revealContainer.innerHTML += `
-                <div style="flex: 1; min-width: 150px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 5px;">
-                    <h3 style="margin-top:0;">${p}</h3>
-                    <h4 id="reveal-score-${p}" style="color: var(--secondary);">Score: ?</h4>
-                    <ul style="list-style: none; padding: 0; text-align: left; max-height: 350px; overflow-y: auto;">
-                        ${listHTML}
-                    </ul>
-                </div>`;
-            });
-            
-            document.getElementById('revealModal').style.display = 'flex';
-            
-            // Phase 1 Animation: 3 Seconds in, Cross out duplicates!
-            setTimeout(() => {
-                document.querySelectorAll('.reveal-word').forEach(el => {
-                    if (el.dataset.unique === 'false') {
-                        el.style.textDecoration = 'line-through';
-                        el.style.color = 'var(--danger)';
+            socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge });
+            sendAdminUpdate();
+        } else {
+            socket.emit('authError', 'Invalid username or password.');
+        }
+    });
+
+    socket.on('reconnectUser', async (data) => {
+        if (onlineUsers[data.username] && onlineUsers[data.username] !== socket.id) {
+            return socket.emit('authError', 'Game already open in another tab.');
+        }
+        const { data: user } = await supabase.from('Wordiers').select('*').eq('username', data.username).eq('password', data.password).single();
+        if (user) {
+            currentUser = user.username;
+            onlineUsers[currentUser] = socket.id;
+            socket.username = currentUser;
+
+            let activeRoom = null;
+            for (const roomId in rooms) {
+                if (rooms[roomId].players.includes(currentUser)) {
+                    if (rooms[roomId].status === 'playing') {
+                        activeRoom = rooms[roomId];
+                        socket.join(roomId);
+                        break;
                     } else {
-                        el.style.color = 'var(--text-light)';
-                        el.querySelector('.reveal-pts').style.display = 'inline';
+                        handlePlayerLeave(socket, roomId);
                     }
-                });
-                
-                // Phase 2 Animation: 2 Seconds later, show the calculated Scores
-                setTimeout(() => {
-                    data.sortedPlayers.forEach(p => {
-                        document.getElementById(`reveal-score-${p}`).innerText = `Final Score: ${data.results[p].score}`;
-                        document.getElementById(`reveal-score-${p}`).style.color = 'var(--primary)';
-                    });
-                    
-                    // Phase 3: 4 Seconds later, close reveal and show standard final LP board
-                    setTimeout(() => {
-                        document.getElementById('revealModal').style.display = 'none';
-                        showGameOverBoard(data);
-                    }, 4500);
-
-                }, 2500);
-
-            }, 3000);
-        });
-
-        // STEP 2: The classic LP ranking board after the reveal
-        function showGameOverBoard(data) {
-            const resultsDiv = document.getElementById('gameOverResults');
-            resultsDiv.innerHTML = '';
-            
-            data.sortedPlayers.forEach((p, index) => {
-                const res = data.results[p];
-                const lpColor = res.lpChange > 0 ? 'var(--primary)' : (res.lpChange < 0 ? 'var(--danger)' : '#aaa');
-                const lpSign = res.lpChange > 0 ? '+' : '';
-                
-                resultsDiv.innerHTML += `
-                <div class="result-row">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="font-size:20px; font-weight:bold;">#${index + 1}</span>
-                        <img src="assets/${res.badge}" style="width:40px; height:40px; object-fit:contain;">
-                        <span><strong>${res.username}</strong> <br> <span style="font-size:12px; color:#aaa;">${res.rank}</span></span>
-                    </div>
-                    <div style="text-align:right;">
-                        <span style="font-size:18px; font-weight:bold;">${res.score} pts</span><br>
-                        <span style="color:${lpColor}; font-weight:bold;">${lpSign}${res.lpChange} LP</span>
-                    </div>
-                </div>`;
-                
-                if (p === myUsername) {
-                    updateProfileUI({
-                        username: myUsername,
-                        rank: res.rank,
-                        lp: res.newLp,
-                        badge: res.badge
-                    });
                 }
-            });
-
-            document.getElementById('gameOverModal').style.display = 'flex';
-        }
-
-        function resetPlayMenuUI() {
-            document.getElementById('searchingState').style.display = 'none';
-            document.getElementById('rankedWaitingRoom').style.display = 'none';
-            document.getElementById('playMenuGrid').style.display = 'grid';
-            document.getElementById('customMenuSection').style.display = 'block';
-            document.getElementById('roomSetup').style.display = 'none';
-        }
-
-        function returnToLobby() {
-            document.getElementById('gameOverModal').style.display = 'none';
-            document.getElementById('gameScreen').classList.remove('active-screen');
-            document.getElementById('lobbyScreen').classList.add('active-screen');
-            currentRoom = null;
-            
-            resetPlayMenuUI();
-            document.getElementById('playMenu').style.display = 'none';
-            
-            playMenuMusic();
-            socket.emit('getLeaderboard');
-        }
-
-        function openAdminPanel() {
-            document.getElementById('adminPanel').style.display = 'flex';
-            socket.emit('requestAdminData');
-        }
-        function closeAdminPanel() {
-            document.getElementById('adminPanel').style.display = 'none';
-        }
-        function adminBroadcast() {
-            const msg = document.getElementById('adminBroadcastInput').value;
-            if(msg) { socket.emit('adminBroadcast', msg); document.getElementById('adminBroadcastInput').value = ''; }
-        }
-        function adminKick(user) { socket.emit('adminKick', user); }
-        function adminSpectate(roomId) { socket.emit('adminSpectate', roomId); closeAdminPanel(); }
-
-        socket.on('adminDataUpdate', (data) => {
-            if (myUsername !== 'Kei') return;
-            const uList = document.getElementById('adminUserList');
-            uList.innerHTML = '';
-            data.users.forEach(u => {
-                uList.innerHTML += `<div class="admin-item"><span>${u}</span> <button class="btn-danger" style="padding:5px;" onclick="adminKick('${u}')">Kick</button></div>`;
-            });
-
-            const rList = document.getElementById('adminRoomList');
-            rList.innerHTML = '';
-            data.rooms.forEach(r => {
-                rList.innerHTML += `<div class="admin-item">
-                    <span style="font-size:12px;">${r.id}<br>${r.players.join(', ')}<br>Time: ${r.time}s</span> 
-                    <button class="btn-secondary" style="padding:5px;" onclick="adminSpectate('${r.id}')">Spectate</button>
-                </div>`;
-            });
-        });
-
-        socket.on('spectateStart', (data) => {
-            isSpectator = true;
-            currentRoom = data.roomId;
-            document.getElementById('lobbyScreen').classList.remove('active-screen');
-            document.getElementById('gameScreen').classList.add('active-screen');
-            
-            document.getElementById('gameControls').style.display = 'none';
-            document.getElementById('myScoreSection').style.display = 'none';
-            document.getElementById('gamePlayerList').style.display = 'none';
-            document.getElementById('quitGameBtn').style.display = 'none';
-            document.getElementById('opponentsTitle').innerText = 'Spectating Mode';
-            
-            const specViews = document.getElementById('spectatorViews');
-            specViews.style.display = 'grid';
-            specViews.innerHTML = '';
-            
-            data.players.forEach(p => {
-                specViews.innerHTML += `
-                <div class="spec-player" id="specBox_${p}">
-                    <strong>${p}</strong> - <span id="specScore_${p}">0</span> words
-                </div>`;
-            });
-
-            renderBoard(data.board);
-        });
-
-        socket.on('spectatorUpdate', (data) => {
-            if (!isSpectator) return;
-            const scoreSpan = document.getElementById(`specScore_${data.player}`);
-            
-            if (scoreSpan) {
-                const currentScore = parseInt(scoreSpan.innerText) || 0;
-                scoreSpan.innerText = currentScore + 1; // Tracks words found instead of points
             }
-        });
-
-        // --- PWA / Download App Logic ---
-        let deferredPrompt;
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-        });
-
-        function installApp() {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                deferredPrompt.userChoice.then((choiceResult) => {
-                    if (choiceResult.outcome === 'accepted') {
-                        console.log('User accepted the install prompt');
-                    }
-                    deferredPrompt = null;
+            const rankData = getRankData(user.lp);
+            if (activeRoom) {
+                socket.emit('rejoinGame', {
+                    roomId: activeRoom.id, board: activeRoom.board, players: activeRoom.players, time: activeRoom.time,
+                    myScore: activeRoom.words[currentUser].length, myWords: activeRoom.words[currentUser]
                 });
             } else {
-                alert("To install the app:\n\nAndroid: Tap the 3 dots menu and select 'Install app' or 'Add to Home screen'.\n\niOS: Tap the Share icon and select 'Add to Home Screen'.");
+                socket.emit('authSuccess', { username: currentUser, lp: user.lp, rank: rankData.rank, badge: rankData.badge });
+            }
+            sendAdminUpdate();
+        } else {
+            socket.emit('authError', 'Session expired. Please log in again.');
+        }
+    });
+
+    socket.on('logout', () => {
+        if (currentUser) {
+            for (const roomId in rooms) {
+                if (rooms[roomId].players.includes(currentUser) && rooms[roomId].status === 'waiting') {
+                    handlePlayerLeave(socket, roomId);
+                }
+            }
+            delete onlineUsers[currentUser];
+        }
+        currentUser = null;
+        sendAdminUpdate();
+    });
+
+    socket.on('getLeaderboard', async () => {
+        const { data: topPlayers } = await supabase.from('Wordiers').select('username, lp, rank, wins, losses').order('lp', { ascending: false }).limit(10);
+        if (topPlayers) {
+            const mappedPlayers = topPlayers.map(p => ({ ...p, badge: getRankData(p.lp).badge }));
+            socket.emit('updateLeaderboard', mappedPlayers);
+        }
+    });
+
+    function beginGameSequence(roomId) {
+        const room = rooms[roomId];
+        if (!room) return;
+        room.isRankedWaiting = false; 
+        room.status = 'playing'; 
+        
+        io.to(roomId).emit('gameLoading', { roomId: roomId, board: room.board, players: room.players });
+        
+        setTimeout(() => {
+            if (rooms[roomId]) { 
+                io.to(roomId).emit('gameStart', { roomId: roomId, board: room.board, players: room.players, time: room.time });
+                startGameTimer(roomId);
+                if (room.isAI) startAILogic(roomId);
+            }
+        }, 3000); 
+    }
+
+    socket.on('findMatch', async () => {
+        if (!currentUser) return;
+        const { data: userData } = await supabase.from('Wordiers').select('lp').eq('username', currentUser).single();
+        const playerLp = userData ? userData.lp : 0;
+        socket.lp = playerLp; 
+        
+        const rankData = getRankData(playerLp);
+        const worldRank = await getPlayerWorldRank(currentUser, playerLp);
+        const pDetails = { lpRank: rankData.rank, worldRank: worldRank };
+        
+        let joinedRoomId = null;
+        for (const roomId in rooms) {
+            const room = rooms[roomId];
+            if (room.isRankedWaiting && room.players.length < 4) {
+                if (Math.abs(room.baseLp - playerLp) <= 200) {
+                    joinedRoomId = roomId;
+                    break;
+                }
+            }
+        }
+        
+        if (joinedRoomId) {
+            const room = rooms[joinedRoomId];
+            socket.join(joinedRoomId);
+            room.players.push(currentUser);
+            room.scores[currentUser] = 0;
+            room.words[currentUser] = [];
+            room.readyStates[currentUser] = false;
+            room.playerDetails[currentUser] = pDetails;
+            io.to(joinedRoomId).emit('rankedLobbyUpdate', { roomId: joinedRoomId, players: room.players, readyStates: room.readyStates, playerDetails: room.playerDetails });
+            return;
+        }
+
+        if (!matchmakingQueue.find(s => s.id === socket.id)) {
+            matchmakingQueue.push(socket);
+            socket.username = currentUser;
+        }
+
+        let matchedGroup = [];
+        for (let i = 0; i < matchmakingQueue.length; i++) {
+            if (Math.abs(matchmakingQueue[i].lp - playerLp) <= 200) {
+                matchedGroup.push(matchmakingQueue[i]);
             }
         }
 
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').then(() => {
-                console.log('Service Worker Registered');
-            }).catch(err => console.error('Service Worker Registration Failed:', err));
+        if (matchedGroup.length >= 2) {
+            matchedGroup.forEach(s => {
+                matchmakingQueue = matchmakingQueue.filter(q => q.id !== s.id);
+            });
+            
+            const roomId = 'ranked_' + Date.now();
+            rooms[roomId] = {
+                id: roomId,
+                players: matchedGroup.map(s => s.username),
+                readyStates: {},
+                playerDetails: {},
+                board: generateBoard(),
+                time: 120,
+                scores: {},
+                words: {},
+                isCustom: false,
+                isAI: false,
+                isRankedWaiting: true,
+                status: 'waiting',
+                baseLp: matchedGroup[0].lp 
+            };
+            
+            for (let s of matchedGroup) {
+                s.join(roomId);
+                rooms[roomId].scores[s.username] = 0;
+                rooms[roomId].words[s.username] = [];
+                rooms[roomId].readyStates[s.username] = false;
+                
+                const sLp = s.lp; 
+                const sWr = await getPlayerWorldRank(s.username, sLp);
+                rooms[roomId].playerDetails[s.username] = { lpRank: getRankData(sLp).rank, worldRank: sWr };
+            }
+            
+            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: rooms[roomId].players, readyStates: rooms[roomId].readyStates, playerDetails: rooms[roomId].playerDetails });
+        } else {
+            socket.emit('searchingMatch'); 
         }
-    </script>
-</body>
-</html>
+    });
+
+    socket.on('cancelMatch', () => {
+        matchmakingQueue = matchmakingQueue.filter(s => s.id !== socket.id);
+    });
+
+    function handlePlayerLeave(sock, roomId) {
+        const room = rooms[roomId];
+        if (!room || room.status !== 'waiting') return;
+        
+        const userToLeave = sock.username;
+        sock.leave(roomId);
+        
+        room.players = room.players.filter(p => p !== userToLeave);
+        
+        if (room.isRankedWaiting) {
+            delete room.readyStates[userToLeave];
+            if (room.playerDetails) delete room.playerDetails[userToLeave];
+        }
+        if (room.scores) delete room.scores[userToLeave];
+        if (room.words) delete room.words[userToLeave];
+        
+        if (room.players.length === 0) {
+            delete rooms[roomId];
+        } else {
+            if (room.isRankedWaiting) {
+                if (room.players.length === 1) {
+                    const lastUser = room.players[0];
+                    const lastSocketId = onlineUsers[lastUser];
+                    if (lastSocketId) {
+                        const lastSocket = io.sockets.sockets.get(lastSocketId);
+                        if (lastSocket) {
+                            lastSocket.leave(roomId);
+                            if (!matchmakingQueue.find(s => s.id === lastSocket.id)) {
+                                matchmakingQueue.push(lastSocket);
+                            }
+                            lastSocket.emit('searchingMatch');
+                        }
+                    }
+                    delete rooms[roomId];
+                } else {
+                    io.to(roomId).emit('rankedLobbyUpdate', { 
+                        roomId, 
+                        players: room.players, 
+                        readyStates: room.readyStates,
+                        playerDetails: room.playerDetails 
+                    });
+                }
+            } else {
+                if (room.host === userToLeave) room.host = room.players[0];
+                io.to(roomId).emit('playerJoined', room.players);
+            }
+        }
+        broadcastRoomList();
+    }
+
+    socket.on('leaveWaitingRoom', (roomId) => {
+        handlePlayerLeave(socket, roomId);
+    });
+
+    socket.on('readyRanked', (roomId) => {
+        const room = rooms[roomId];
+        if (room && room.isRankedWaiting) {
+            room.readyStates[currentUser] = true;
+            io.to(roomId).emit('rankedLobbyUpdate', { roomId, players: room.players, readyStates: room.readyStates, playerDetails: room.playerDetails });
+            
+            const allReady = room.players.every(p => room.readyStates[p]);
+            if (allReady && room.players.length >= 2) {
+                beginGameSequence(roomId);
+            }
+        }
+    });
+
+    socket.on('getRoomList', () => {
+        broadcastRoomList();
+    });
+
+    socket.on('createRoom', (password) => {
+        if (!currentUser) return;
+        const roomId = 'custom_' + Date.now();
+        socket.join(roomId);
+        socket.username = currentUser;
+        rooms[roomId] = { 
+            id: roomId, players: [currentUser], board: generateBoard(), time: 120, 
+            scores: { [currentUser]: 0 }, words: { [currentUser]: [] }, isCustom: true, 
+            host: currentUser, isAI: false, isRankedWaiting: false, status: 'waiting',
+            password: password || null
+        };
+        socket.emit('roomCreated', roomId);
+        io.to(roomId).emit('playerJoined', rooms[roomId].players);
+        broadcastRoomList();
+        sendAdminUpdate();
+    });
+
+    socket.on('joinRoom', (data) => {
+        const { roomId, password } = data;
+        if (!currentUser || !rooms[roomId] || rooms[roomId].players.length >= 8) {
+            return socket.emit('roomError', 'Room unavailable.');
+        }
+        if (rooms[roomId].password && rooms[roomId].password !== password) {
+            return socket.emit('roomError', 'Incorrect password.');
+        }
+        socket.join(roomId);
+        socket.username = currentUser;
+        rooms[roomId].players.push(currentUser);
+        rooms[roomId].scores[currentUser] = 0;
+        rooms[roomId].words[currentUser] = [];
+        io.to(roomId).emit('playerJoined', rooms[roomId].players);
+        broadcastRoomList();
+        sendAdminUpdate();
+    });
+
+    socket.on('startCustomGame', (roomId) => {
+        if (rooms[roomId] && rooms[roomId].host === currentUser) {
+            if (rooms[roomId].players.length >= 2) {
+                beginGameSequence(roomId);
+            } else {
+                socket.emit('roomError', 'A minimum of 2 players is required to start the game!');
+            }
+        }
+    });
+
+    socket.on('startAIMatch', () => {
+        if (!currentUser) return;
+        const roomId = 'ai_' + Date.now();
+        socket.join(roomId);
+        socket.username = currentUser;
+
+        const aiPlayers = ['AI_Alpha', 'AI_Beta', 'AI_Gamma', 'AI_Delta'];
+        const players = [currentUser, ...aiPlayers];
+
+        rooms[roomId] = { id: roomId, players: players, board: generateBoard(), time: 120, scores: {}, words: {}, isCustom: false, isAI: true, isRankedWaiting: false, status: 'waiting', aiIntervals: [] };
+
+        players.forEach(p => {
+            rooms[roomId].scores[p] = 0;
+            rooms[roomId].words[p] = [];
+        });
+
+        beginGameSequence(roomId);
+        sendAdminUpdate();
+    });
+
+    function startAILogic(roomId) {
+        const room = rooms[roomId];
+        if (!room || allWords.length === 0) return;
+        
+        const aiPlayers = room.players.filter(p => p.startsWith('AI_'));
+        aiPlayers.forEach(ai => {
+            const interval = setInterval(() => {
+                if (!rooms[roomId]) return clearInterval(interval);
+                const randomWord = allWords[Math.floor(Math.random() * allWords.length)];
+                if (randomWord.length >= 3 && randomWord.length <= 5 && !room.words[ai].includes(randomWord)) {
+                    room.words[ai].push(randomWord);
+                    io.to(roomId).emit('spectatorUpdate', { player: ai, points: 1 }); // Just emits word count increment
+                }
+            }, 5000 + Math.random() * 6000); 
+            room.aiIntervals.push(interval);
+        });
+    }
+
+    socket.on('submitWord', (data) => {
+        const { roomId, word } = data;
+        const room = rooms[roomId];
+        if (!room || !currentUser) return;
+
+        const cleanWord = word.toUpperCase();
+        if (cleanWord.length < 3 || room.words[currentUser].includes(cleanWord) || !dictionaryTrie.search(cleanWord)) {
+            return socket.emit('wordResult', { success: false });
+        }
+
+        room.words[currentUser].push(cleanWord);
+
+        socket.emit('wordResult', { success: true, word: cleanWord });
+        socket.emit('myScoreUpdate', room.words[currentUser].length); // Transmits word count instead of score
+        io.to(roomId).emit('spectatorUpdate', { player: currentUser, points: 1 });
+    });
+
+    socket.on('quitMatch', async (roomId) => {
+        if (!currentUser || !rooms[roomId]) return;
+        const room = rooms[roomId];
+        room.scores[currentUser] = -9999; 
+        socket.leave(roomId);
+        
+        const lpChange = room.isAI ? 0 : -20;
+        const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', currentUser).single();
+        let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
+        let newLosses = (userData ? userData.losses : 0) + (room.isAI ? 0 : 1);
+        const rankData = getRankData(newLp);
+        
+        await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank, losses: newLosses }).eq('username', currentUser);
+        socket.emit('quitSuccess', { lp: newLp, rank: rankData.rank, badge: rankData.badge, penalty: lpChange });
+    });
+
+    function startGameTimer(roomId) {
+        const room = rooms[roomId];
+        if (!room) return;
+
+        room.interval = setInterval(() => {
+            room.time--;
+            io.to(roomId).emit('timeUpdate', room.time);
+            if (room.time <= 0) {
+                clearInterval(room.interval);
+                handleGameOver(roomId);
+            }
+        }, 1000);
+    }
+
+    async function handleGameOver(roomId) {
+        const room = rooms[roomId];
+        if (!room) return;
+
+        if (room.isAI) room.aiIntervals.forEach(clearInterval);
+
+        const wordFreq = {};
+        const allPlayers = room.players;
+        
+        // Count frequencies of all valid words across all players
+        allPlayers.forEach(p => {
+            if (room.scores[p] !== -9999) { // Ignore words from players who quit
+                room.words[p].forEach(w => {
+                    wordFreq[w] = (wordFreq[w] || 0) + 1;
+                });
+            }
+        });
+
+        // Evaluate unique words and set final scores
+        room.detailedWords = {};
+        allPlayers.forEach(p => {
+            if (room.scores[p] === -9999) return;
+            
+            let finalScore = 0;
+            const detailedWords = [];
+            room.words[p].forEach(w => {
+                const isUnique = wordFreq[w] === 1;
+                const pts = isUnique ? getWordScore(w.length) : 0;
+                finalScore += pts;
+                detailedWords.push({ word: w, isUnique: isUnique, points: pts });
+            });
+            room.scores[p] = finalScore;
+            room.detailedWords[p] = detailedWords;
+        });
+
+        // Now sort based on the new computed scores
+        const sortedPlayers = Object.keys(room.scores).sort((a, b) => room.scores[b] - room.scores[a]);
+        const lpResults = {};
+
+        const activePlayers = sortedPlayers.filter(p => !p.startsWith('AI_'));
+        const pCount = activePlayers.length;
+
+        const scoreGroups = {};
+        activePlayers.forEach(p => {
+            const score = room.scores[p];
+            if (!scoreGroups[score]) scoreGroups[score] = [];
+            scoreGroups[score].push(p);
+        });
+
+        const uniqueScores = Object.keys(scoreGroups).map(Number).sort((a, b) => b - a);
+        const validPlayersCount = activePlayers.filter(p => onlineUsers[p] && room.scores[p] !== -9999).length;
+        const isTotalTie = uniqueScores.length === 1 && validPlayersCount > 1;
+
+        const lpAssignments = {};
+        const isWinAssignments = {};
+
+        if (isTotalTie) {
+            activePlayers.forEach(p => {
+                lpAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? -20 : 0;
+                isWinAssignments[p] = (!onlineUsers[p] || room.scores[p] === -9999) ? false : true;
+            });
+        } else {
+            let placesTaken = 0;
+            uniqueScores.forEach(score => {
+                const tiedPlayers = scoreGroups[score];
+                const numTied = tiedPlayers.length;
+                const place = placesTaken + 1;
+                const isLast = (placesTaken + numTied === pCount);
+
+                let assignedLp = 0;
+
+                if (isLast) {
+                    assignedLp = -5;
+                } else if (place === 1) {
+                    if (numTied === 1) assignedLp = 20;
+                    else if (numTied === 2) assignedLp = 10;
+                    else if (numTied === 3) assignedLp = 6;
+                } else if (place === 2) {
+                    if (pCount === 4) {
+                        if (numTied === 1) assignedLp = 5;
+                        else if (numTied === 2) assignedLp = 2;
+                        else if (numTied === 3) assignedLp = 1;
+                    } else if (pCount === 3) {
+                        if (numTied === 1) assignedLp = 0;
+                    }
+                } else if (place === 3) {
+                    assignedLp = 0;
+                }
+
+                tiedPlayers.forEach(p => {
+                    if (!onlineUsers[p] || room.scores[p] === -9999) {
+                        lpAssignments[p] = -20;
+                        isWinAssignments[p] = false;
+                    } else {
+                        lpAssignments[p] = assignedLp;
+                        isWinAssignments[p] = assignedLp > 0;
+                    }
+                });
+
+                placesTaken += numTied;
+            });
+        }
+
+        for (const player of sortedPlayers) {
+            if (player.startsWith('AI_')) {
+                lpResults[player] = { 
+                    username: player, 
+                    score: room.scores[player], 
+                    detailedWords: room.detailedWords[player] || [], 
+                    lpChange: 0, 
+                    newLp: 0, 
+                    rank: "AI Engine", 
+                    badge: "e.png" 
+                };
+                continue;
+            }
+
+            const isConnected = !!onlineUsers[player];
+            const hasForfeited = room.scores[player] === -9999;
+            
+            // FETCH USER DATA HERE SO WE KNOW THEIR CURRENT LP/RANK FOR AI THRESHOLDS
+            const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', player).single();
+            const currentLp = userData ? userData.lp : 0;
+            
+            let lpChange = 0;
+
+            if (room.isAI) {
+                if (!isConnected || hasForfeited) {
+                    lpChange = 0; 
+                } else {
+                    const score = room.scores[player];
+                    const baseLpChange = Math.floor(score / 10);
+                    
+                    if (currentLp >= 901) { // S Rank (901+)
+                        lpChange = score >= 50 ? baseLpChange : -baseLpChange;
+                    } else if (currentLp >= 701) { // A Rank (701-900)
+                        lpChange = score >= 35 ? baseLpChange : -baseLpChange;
+                    } else if (currentLp >= 501) { // B Rank (501-700)
+                        lpChange = score >= 25 ? baseLpChange : -baseLpChange;
+                    } else { // E to C+ Rank (0-500)
+                        lpChange = score >= 10 ? baseLpChange : 0;
+                    }
+                }
+            } else {
+                lpChange = lpAssignments[player];
+            }
+
+            let newLp = Math.max(0, currentLp + lpChange);
+            let newWins = userData && userData.wins ? userData.wins : 0;
+            let newLosses = userData && userData.losses ? userData.losses : 0;
+            const rankData = getRankData(newLp);
+
+            if (!room.isAI && !hasForfeited) {
+                if (isWinAssignments[player]) newWins++;
+                else newLosses++;
+                await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank, wins: newWins, losses: newLosses }).eq('username', player);
+            } else if (room.isAI && !hasForfeited) {
+                await supabase.from('Wordiers').update({ lp: newLp, rank: rankData.rank }).eq('username', player);
+            }
+            
+            lpResults[player] = { 
+                username: player,
+                score: hasForfeited ? 0 : room.scores[player], 
+                detailedWords: room.detailedWords[player] || [], 
+                lpChange: lpChange, 
+                newLp: newLp, 
+                rank: rankData.rank, 
+                badge: rankData.badge 
+            };
+        }
+
+        io.to(roomId).emit('gameOver', { results: lpResults, sortedPlayers: sortedPlayers });
+        delete rooms[roomId];
+        broadcastRoomList();
+        sendAdminUpdate();
+    }
+
+    function sendAdminUpdate() {
+        const activeRoomsData = Object.keys(rooms).map(id => ({ id, players: rooms[id].players, time: rooms[id].time }));
+        io.emit('adminDataUpdate', { users: Object.keys(onlineUsers), rooms: activeRoomsData });
+    }
+
+    socket.on('requestAdminData', () => { if (currentUser === 'Kei') sendAdminUpdate(); });
+    
+    socket.on('adminKick', (targetUser) => {
+        if (currentUser !== 'Kei') return;
+        const targetSocketId = onlineUsers[targetUser];
+        if (targetSocketId) {
+            io.to(targetSocketId).emit('adminKicked');
+            io.sockets.sockets.get(targetSocketId)?.disconnect();
+        }
+    });
+
+    socket.on('adminSpectate', (roomId) => {
+        if (currentUser === 'Kei' && rooms[roomId]) {
+            socket.join(roomId);
+            socket.emit('spectateStart', { roomId: roomId, board: rooms[roomId].board, players: rooms[roomId].players, time: rooms[roomId].time });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        if (currentUser) {
+            for (const roomId in rooms) {
+                if (rooms[roomId].players.includes(currentUser) && rooms[roomId].status === 'waiting') {
+                    handlePlayerLeave(socket, roomId);
+                }
+            }
+            delete onlineUsers[currentUser];
+        }
+        matchmakingQueue = matchmakingQueue.filter(s => s.id !== socket.id);
+        broadcastRoomList();
+        sendAdminUpdate();
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
