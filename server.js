@@ -660,22 +660,37 @@ io.on('connection', (socket) => {
                 continue;
             }
 
-            let lpChange = 0;
             const isConnected = !!onlineUsers[player];
             const hasForfeited = room.scores[player] === -9999;
+            
+            // FETCH USER DATA HERE SO WE KNOW THEIR CURRENT LP/RANK FOR AI THRESHOLDS
+            const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', player).single();
+            const currentLp = userData ? userData.lp : 0;
+            
+            let lpChange = 0;
 
             if (room.isAI) {
                 if (!isConnected || hasForfeited) {
                     lpChange = 0; 
                 } else {
-                    lpChange = room.scores[player] >= 10 ? Math.floor(room.scores[player] / 10) : 0;
+                    const score = room.scores[player];
+                    const baseLpChange = Math.floor(score / 10);
+                    
+                    if (currentLp >= 901) { // S Rank (901+)
+                        lpChange = score >= 50 ? baseLpChange : -baseLpChange;
+                    } else if (currentLp >= 701) { // A Rank (701-900)
+                        lpChange = score >= 35 ? baseLpChange : -baseLpChange;
+                    } else if (currentLp >= 501) { // B Rank (501-700)
+                        lpChange = score >= 25 ? baseLpChange : -baseLpChange;
+                    } else { // E to C+ Rank (0-500)
+                        lpChange = score >= 10 ? baseLpChange : 0;
+                    }
                 }
             } else {
                 lpChange = lpAssignments[player];
             }
 
-            const { data: userData } = await supabase.from('Wordiers').select('lp, wins, losses').eq('username', player).single();
-            let newLp = Math.max(0, (userData ? userData.lp : 0) + lpChange);
+            let newLp = Math.max(0, currentLp + lpChange);
             let newWins = userData && userData.wins ? userData.wins : 0;
             let newLosses = userData && userData.losses ? userData.losses : 0;
             const rankData = getRankData(newLp);
