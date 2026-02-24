@@ -122,8 +122,12 @@ async function getPlayerWorldRank(username, lp) {
                 const pLosses = p.losses || 0;
                 const pTotal = pWins + pLosses;
                 const pWinRate = pTotal > 0 ? (pWins / pTotal) : 0;
+                
                 if (pWinRate > userWinRate) {
                     higherWinRateCount++;
+                } else if (pWinRate === userWinRate) {
+                    // Tertiary Tiebreaker: More games played ranks higher if Win Rate is identical
+                    if (pTotal > userTotal) higherWinRateCount++;
                 }
             }
         }
@@ -136,7 +140,6 @@ async function getPlayerWorldRank(username, lp) {
 }
 
 function broadcastRoomList() {
-    // Only broadcast custom rooms that are currently in the 'waiting' state
     const availableRooms = Object.keys(rooms).filter(id => rooms[id].isCustom && rooms[id].status === 'waiting' && rooms[id].players.length < 8).map(id => ({
         id: id, players: rooms[id].players.length, isLocked: !!rooms[id].password
     }));
@@ -232,9 +235,28 @@ io.on('connection', (socket) => {
     });
 
     socket.on('getLeaderboard', async () => {
-        const { data: topPlayers } = await supabase.from('Wordiers').select('username, lp, rank, wins, losses').order('lp', { ascending: false }).limit(10);
-        if (topPlayers) {
-            const mappedPlayers = topPlayers.map(p => ({ ...p, badge: getRankData(p.lp).badge }));
+        // Fetch up to top 100 to accurately sort players with tied LP via Javascript
+        const { data: players } = await supabase.from('Wordiers').select('username, lp, rank, wins, losses').order('lp', { ascending: false }).limit(100);
+        if (players) {
+            players.sort((a, b) => {
+                if (b.lp !== a.lp) return b.lp - a.lp; // Primary: LP
+                
+                const aWins = a.wins || 0;
+                const aLosses = a.losses || 0;
+                const aTotal = aWins + aLosses;
+                const aWinRate = aTotal > 0 ? (aWins / aTotal) : 0;
+                
+                const bWins = b.wins || 0;
+                const bLosses = b.losses || 0;
+                const bTotal = bWins + bLosses;
+                const bWinRate = bTotal > 0 ? (bWins / bTotal) : 0;
+                
+                if (bWinRate !== aWinRate) return bWinRate - aWinRate; // Secondary: Win Rate
+                return bTotal - aTotal; // Tertiary: Most games played wins ties
+            });
+
+            const top10 = players.slice(0, 10);
+            const mappedPlayers = top10.map(p => ({ ...p, badge: getRankData(p.lp).badge }));
             socket.emit('updateLeaderboard', mappedPlayers);
         }
     });
@@ -244,7 +266,7 @@ io.on('connection', (socket) => {
         if (!room) return;
         room.isRankedWaiting = false; 
         room.status = 'playing'; 
-        broadcastRoomList(); // Force list update so room disappears
+        broadcastRoomList(); 
         
         io.to(roomId).emit('gameLoading', { roomId: roomId, board: room.board, players: room.players });
         
@@ -437,7 +459,6 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', (data) => {
         const { roomId, password } = data;
-        // Verify room is actually waiting to avoid mid-game crashes
         if (!currentUser || !rooms[roomId] || rooms[roomId].status !== 'waiting' || rooms[roomId].players.length >= 8) {
             return socket.emit('roomError', 'Room unavailable or game has already started.');
         }
@@ -540,7 +561,6 @@ io.on('connection', (socket) => {
         if (!room) return;
 
         room.interval = setInterval(() => {
-            // Safety Check: if room was suddenly deleted due to all disconnecting
             if (!rooms[roomId]) {
                 clearInterval(room.interval);
                 return;
@@ -631,7 +651,6 @@ io.on('connection', (socket) => {
                         assignedLp = 0;
                     }
                 } else {
-                    // Ranked Tiebreaker Preserved
                     if (isLast) {
                         assignedLp = -5;
                     } else if (place === 1) {
@@ -657,7 +676,7 @@ io.on('connection', (socket) => {
                         isWinAssignments[p] = false;
                     } else {
                         lpAssignments[p] = assignedLp;
-                        isWinAssignments[p] = assignedLp > 0; // 1st Place gets Win, others get Loss/Record update
+                        isWinAssignments[p] = assignedLp > 0; 
                     }
                 });
 
@@ -730,7 +749,6 @@ io.on('connection', (socket) => {
         }
 
         io.to(roomId).emit('gameOver', { results: lpResults, sortedPlayers: sortedPlayers });
-        // Immediate Deletion of Ghost Room Resources
         delete rooms[roomId];
         broadcastRoomList();
         sendAdminUpdate();
@@ -760,10 +778,8 @@ io.on('connection', (socket) => {
                     if (room.status === 'waiting') {
                         handlePlayerLeave(socket, roomId);
                     } else if (room.status === 'playing') {
-                        // If room is playing, let's see if anyone else human is still here
                         const humanStillOnline = room.players.some(p => p !== currentUser && !p.startsWith('AI_') && onlineUsers[p]);
                         if (!humanStillOnline) {
-                            // Eradicate the ghost room instantly
                             if (room.interval) clearInterval(room.interval);
                             if (room.aiIntervals) room.aiIntervals.forEach(clearInterval);
                             delete rooms[roomId];
